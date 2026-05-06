@@ -478,6 +478,364 @@ def prefix_severity_profiles(master: pd.DataFrame, depth: int = 2) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 11. Subtree explorer — drill into any node by token path
+# ---------------------------------------------------------------------------
+def explore_subtree(
+    root: Node,
+    path: "str | list[str]",
+    *,
+    max_depth: int = 6,
+    min_rules: int = 3,
+    max_children: int = 8,
+    show_ascii: bool = True,
+    show_divergence: bool = True,
+    pure_entropy: float = 0.15,
+) -> "Node | None":
+    """
+    Navigate to a subtree by token path and display it.
+
+    path can be:
+      - a hyphen-string  "POWER-PANEL"
+      - a list           ["POWER", "PANEL"]
+
+    Returns the subtree Node so you can pass it to plot_trie_tree().
+
+    Examples
+    --------
+        node = explore_subtree(pref_root, "POWER")
+        node = explore_subtree(pref_root, "MEDIUM-VOLTAGE-DISTRIBUTION")
+        explore_subtree(suf_root, "GENERATOR")   # suffix trie view
+    """
+    if isinstance(path, str):
+        path_tokens = [t for t in path.upper().strip().split("-") if t]
+    else:
+        path_tokens = [t.upper() for t in path]
+
+    node = root
+    resolved: list[str] = []
+
+    for tok in path_tokens:
+        if tok not in node.children:
+            avail = sorted(node.children.items(), key=lambda x: -x[1].n_rules)
+            pfx = "-".join(resolved) or "ROOT"
+            print(f"\n[!] Token '{tok}' not found under '{pfx}'.")
+            print(f"    Children of '{pfx}' (top 10 by rule count):")
+            for t, c in avail[:10]:
+                print(f"      {t:30s}  n={c.n_rules}  {_bar(c.sev_counts, width=14)}")
+            return None
+        node = node.children[tok]
+        resolved.append(tok)
+
+    path_str = "-".join(resolved)
+    h = entropy(node.sev_counts)
+    print(f"\n{'='*70}")
+    print(f"SUBTREE EXPLORER: '{path_str}'")
+    print(f"  n={node.n_rules}  H={h:.3f}  {_bar(node.sev_counts, width=20)}")
+    print(f"{'='*70}")
+
+    if show_ascii:
+        print_ascii_trie(node, max_depth=max_depth, min_rules=min_rules,
+                         max_children=max_children)
+    if show_divergence:
+        print_divergence_tree(node, min_rules=min_rules, pure_entropy=pure_entropy,
+                              max_depth=max_depth)
+
+    # Show available children as hints for the next drill
+    avail = sorted(node.children.items(), key=lambda x: -x[1].n_rules)
+    if avail:
+        print(f"\n[Drill deeper — children of '{path_str}']")
+        for tok, child in avail[:12]:
+            print(f"  explore_subtree(root, '{path_str}-{tok}')  "
+                  f"n={child.n_rules}  {_bar(child.sev_counts, width=12)}")
+
+    return node
+
+
+# ---------------------------------------------------------------------------
+# 12. Top-to-bottom graphical tree (requires matplotlib)
+# ---------------------------------------------------------------------------
+_PLOT_COLORS = {
+    "High":       "#ff6b6b",
+    "Critical":   "#cc44cc",
+    "Medium":     "#ffd93d",
+    "Diagnostic": "#74c7d4",
+    "Low":        "#74d490",
+}
+_PLOT_DEFAULT = "#bbbbbb"
+
+
+def _layout_tree(
+    node: Node,
+    max_depth: int,
+    min_rules: int,
+    depth: int = 0,
+    x_offset: float = 0.0,
+) -> "tuple[dict[int, tuple[float, float]], float]":
+    """
+    Reingold-Tilford-style layout.
+    Returns ({node_id: (x_center, y)}, total_width).
+    y = -depth so root sits at the top when plotted.
+    """
+    eligible = sorted(
+        [(t, c) for t, c in node.children.items() if c.n_rules >= min_rules],
+        key=lambda x: -x[1].n_rules,
+    )
+
+    if not eligible or depth >= max_depth:
+        return {id(node): (x_offset + 0.5, float(-depth))}, 1.0
+
+    positions: dict[int, tuple[float, float]] = {}
+    x_cursor = x_offset
+    child_centers: list[float] = []
+
+    for _, child in eligible:
+        child_pos, child_w = _layout_tree(child, max_depth, min_rules, depth + 1, x_cursor)
+        positions.update(child_pos)
+        child_centers.append(positions[id(child)][0])
+        x_cursor += child_w
+
+    node_x = (child_centers[0] + child_centers[-1]) / 2
+    positions[id(node)] = (node_x, float(-depth))
+    return positions, x_cursor - x_offset
+
+
+def plot_trie_tree(
+    root: Node,
+    path: "str | list[str] | None" = None,
+    *,
+    max_depth: int = 5,
+    min_rules: int = 5,
+    figsize: "tuple[int, int] | None" = None,
+    save_to: "str | None" = None,
+    title: "str | None" = None,
+) -> None:
+    """
+    Draw the trie as a top-to-bottom graphical tree (requires matplotlib).
+
+    Visual encoding
+    ---------------
+    Box COLOR   = dominant severity of that branch
+    Box OPACITY = purity  (fully solid = one severity, faded = mixed)
+    Mini bar    = stacked severity split inside each box
+
+    Parameters
+    ----------
+    root      : pref_root or suf_root
+    path      : optional subtree start, e.g. "POWER" or "MEDIUM-VOLTAGE"
+    max_depth : levels to draw (5 is usually readable; more → wider)
+    min_rules : prune branches with fewer rules (raise to simplify)
+    save_to   : save PNG instead of plt.show(), e.g. "trie.png"
+
+    Examples
+    --------
+        plot_trie_tree(pref_root)                            # full tree
+        plot_trie_tree(pref_root, "POWER", max_depth=5)     # POWER subtree
+        plot_trie_tree(pref_root, save_to="trie_full.png")  # save to file
+        plot_trie_tree(suf_root, max_depth=4)               # suffix tree
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+        from matplotlib.patches import FancyBboxPatch
+    except ImportError:
+        print("matplotlib not installed.  Run:  pip install matplotlib")
+        return
+
+    # Navigate to subtree
+    node = root
+    path_label = "ROOT"
+    if path:
+        tokens = [t.upper() for t in (path if isinstance(path, list)
+                                       else path.upper().split("-")) if t]
+        for tok in tokens:
+            if tok not in node.children:
+                avail = sorted(node.children, key=lambda t: -node.children[t].n_rules)[:8]
+                print(f"Token '{tok}' not found. Available: {avail}")
+                return
+            node = node.children[tok]
+        path_label = "-".join(tokens)
+
+    # Compute layout
+    positions, _ = _layout_tree(node, max_depth, min_rules)
+
+    # Collect node metadata (label + parent linkage)
+    info: dict[int, tuple[str, Node, int, "int | None"]] = {}
+
+    def _collect(n: Node, label: str, depth: int, parent_nid: "int | None") -> None:
+        nid = id(n)
+        if nid not in positions:
+            return
+        info[nid] = (label, n, depth, parent_nid)
+        if depth < max_depth:
+            for tok, child in sorted(
+                n.children.items(), key=lambda x: -x[1].n_rules
+            ):
+                if child.n_rules >= min_rules:
+                    _collect(child, tok, depth + 1, nid)
+
+    _collect(node, path_label, 0, None)
+
+    if not info:
+        print("No nodes to plot. Try lowering min_rules or raising max_depth.")
+        return
+
+    # Auto-size figure
+    node_w, node_h = 1.2, 0.55
+    xs = [positions[nid][0] for nid in info]
+    ys = [positions[nid][1] for nid in info]
+    if figsize is None:
+        fw = max(10, min((max(xs) - min(xs) + 2) * node_w * 0.85, 36))
+        fh = max(6, (abs(min(ys)) + 1.5) * 1.9)
+        figsize = (int(fw), int(fh))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.axis("off")
+
+    # ---- Edges ----
+    for nid, (_, _, _, parent_nid) in info.items():
+        if parent_nid is not None:
+            px, py = positions[parent_nid]
+            cx, cy = positions[nid]
+            ax.plot([px, cx], [py - node_h / 2 - 0.02, cy + node_h / 2 + 0.02],
+                    color="#888888", lw=0.7, alpha=0.5, zorder=1)
+
+    # ---- Nodes ----
+    for nid, (label, n, _, _) in info.items():
+        x, y = positions[nid]
+        total = sum(n.sev_counts.values())
+        if not total:
+            continue
+
+        dom_sev, dom_n = n.sev_counts.most_common(1)[0]
+        h = entropy(n.sev_counts)
+        purity = dom_n / total
+        color = _PLOT_COLORS.get(dom_sev, _PLOT_DEFAULT)
+
+        # Faded = mixed severity;  solid = pure
+        rect = FancyBboxPatch(
+            (x - node_w / 2, y - node_h / 2), node_w, node_h,
+            boxstyle="round,pad=0.04",
+            facecolor=color, alpha=0.25 + 0.75 * purity,
+            edgecolor="#444444", linewidth=0.7, zorder=2,
+        )
+        ax.add_patch(rect)
+
+        # Stacked severity mini-bar at the bottom of the box
+        bw, bx = node_w - 0.14, x - (node_w - 0.14) / 2
+        bar_y = y - node_h / 2 + 0.04
+        for sev, cnt in n.sev_counts.most_common():
+            seg = (cnt / total) * bw
+            ax.barh(bar_y, seg, height=0.07, left=bx,
+                    color=_PLOT_COLORS.get(sev, _PLOT_DEFAULT), alpha=0.95, zorder=3)
+            bx += seg
+
+        # Token label + stats
+        short = (label[:13] + "…") if len(label) > 14 else label
+        ax.text(x, y + 0.10, short,
+                ha="center", va="center", fontsize=6.0, fontweight="bold", zorder=4)
+        ax.text(x, y - 0.10, f"n={n.n_rules}  H={h:.2f}",
+                ha="center", va="center", fontsize=4.8, color="#333333", zorder=4)
+
+    # ---- Legend ----
+    present = {info[nid][1].sev_counts.most_common(1)[0][0]
+               for nid in info if info[nid][1].sev_counts}
+    handles = [mpatches.Patch(color=_PLOT_COLORS.get(s, _PLOT_DEFAULT), label=s)
+               for s in _PLOT_COLORS if s in present]
+    handles.append(mpatches.Patch(facecolor="white", edgecolor="black",
+                                   alpha=0.35, label="faded=mixed  solid=pure"))
+    ax.legend(handles=handles, loc="upper right", fontsize=7,
+              title="Severity  (opacity = purity)", title_fontsize=7)
+
+    ax.set_xlim(min(xs) - node_w, max(xs) + node_w)
+    ax.set_ylim(min(ys) - node_h, max(ys) + node_h + 0.4)
+    fig.suptitle(
+        title or f"Prefix Trie  —  root: '{path_label}'  "
+                 f"(max_depth={max_depth}, min_rules={min_rules})",
+        fontsize=9,
+    )
+    plt.tight_layout()
+
+    if save_to:
+        plt.savefig(save_to, dpi=150, bbox_inches="tight")
+        print(f"Saved → {save_to}")
+    else:
+        plt.show()
+
+
+# ---------------------------------------------------------------------------
+# 13. Suffix-trie convenience helpers
+# ---------------------------------------------------------------------------
+def explore_suffix(
+    suf_root: Node,
+    end_pattern: "str | list[str]",
+    **kwargs,
+) -> "Node | None":
+    """
+    Explore the SUFFIX trie starting from a natural-order end pattern.
+
+    The suffix trie stores tokens RIGHT-TO-LEFT, so "COOLING-MODE" (the last
+    two words of a rule) becomes the path MODE → COOLING inside suf_root.
+    This wrapper reverses the pattern for you, so you can type the tokens
+    as they appear in the rule (left-to-right).
+
+    Parameters
+    ----------
+    suf_root    : the suffix trie (built with reversed tokens)
+    end_pattern : last N tokens of a rule in NATURAL order,
+                  e.g. "COOLING-MODE"  or  "FREE-COOLING-MODE"
+
+    Examples
+    --------
+        explore_suffix(suf_root, "COOLING-MODE")
+        explore_suffix(suf_root, "FREE-COOLING-MODE-FREE-COOLING-MODE")
+        explore_suffix(suf_root, "GENERATOR")
+
+    The children shown at the bottom tell you what comes BEFORE this suffix
+    in the rule — keep drilling to trace the rule back toward its start.
+    """
+    if isinstance(end_pattern, str):
+        tokens = [t for t in end_pattern.upper().strip().split("-") if t]
+    else:
+        tokens = [t.upper() for t in end_pattern]
+
+    reversed_path = list(reversed(tokens))
+    print(f"\n[suffix lookup]  natural order: '{'-'.join(tokens)}'")
+    print(f"                 reversed path into suf_root: '{'-'.join(reversed_path)}'")
+    return explore_subtree(suf_root, reversed_path, **kwargs)
+
+
+def plot_suffix_tree(
+    suf_root: Node,
+    end_pattern: "str | list[str] | None" = None,
+    **kwargs,
+) -> None:
+    """
+    Plot the SUFFIX trie as a top-to-bottom graphical tree.
+
+    end_pattern is in natural reading order (right portion of the rule).
+    The function reverses it before navigating into suf_root.
+
+    Examples
+    --------
+        plot_suffix_tree(suf_root)                          # full suffix tree
+        plot_suffix_tree(suf_root, "COOLING-MODE")          # suffix subtree
+        plot_suffix_tree(suf_root, "FREE-COOLING-MODE",
+                         max_depth=6, save_to="suf.png")
+    """
+    if end_pattern is not None:
+        if isinstance(end_pattern, str):
+            tokens = [t for t in end_pattern.upper().strip().split("-") if t]
+        else:
+            tokens = [t.upper() for t in end_pattern]
+        reversed_path = list(reversed(tokens))
+        print(f"[suffix lookup]  natural: '{'-'.join(tokens)}'  "
+              f"→  reversed path: '{'-'.join(reversed_path)}'")
+        plot_trie_tree(suf_root, reversed_path, **kwargs)
+    else:
+        plot_trie_tree(suf_root, **kwargs)
+
+
+# ---------------------------------------------------------------------------
 # 6. Prediction
 # ---------------------------------------------------------------------------
 def predict_with_trie(tokens: list[str], root: Node, min_support: int = 5):
@@ -627,6 +985,18 @@ def main():
     print("SUFFIX DIVERGENCE TREE  (reversed tokens — event-type suffix view)")
     print("=" * 70)
     print_divergence_tree(suf_root, min_rules=3, pure_entropy=0.15)
+
+    # ---- Subtree explorer (uncomment to drill into a specific branch) ----
+    # explore_subtree(pref_root, "POWER")
+    # explore_subtree(pref_root, "MEDIUM-VOLTAGE-DISTRIBUTION")
+    # explore_subtree(pref_root, "POWER-PANEL-MEDIUM-VOLTAGE-DISTRIBUTION")
+    # explore_subtree(suf_root, "GENERATOR")   # suffix trie: rules ending w/ GENERATOR
+
+    # ---- Graphical top-to-bottom tree (requires: pip install matplotlib) ----
+    # plot_trie_tree(pref_root)                               # full prefix tree
+    # plot_trie_tree(pref_root, "POWER", max_depth=5)        # POWER subtree only
+    # plot_trie_tree(pref_root, save_to="trie_prefix.png")   # save instead of show
+    # plot_trie_tree(suf_root,  save_to="trie_suffix.png")   # suffix tree
 
     # ---- Predict ----
     print("\n" + "=" * 70)
