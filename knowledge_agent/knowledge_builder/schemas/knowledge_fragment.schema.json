@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KnowledgeFragmentFrontmatter",
+  "type": "object",
+  "required": [
+    "batch_id",
+    "pattern_type",
+    "pattern",
+    "default_severity",
+    "support",
+    "purity",
+    "entropy",
+    "confidence"
+  ],
+  "properties": {
+    "batch_id": { "type": "string" },
+    "pattern_type": { "type": "string" },
+    "pattern": { "type": "string" },
+    "default_severity": { "type": "string" },
+    "support": { "type": "integer" },
+    "purity": { "type": "number" },
+    "entropy": { "type": "number" },
+    "confidence": {
+      "type": "string",
+      "enum": ["High", "Medium", "Low", "Very Low"]
+    }
+  }
+}
+

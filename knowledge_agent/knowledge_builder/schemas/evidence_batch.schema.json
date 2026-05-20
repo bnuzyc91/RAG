@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvidenceBatch",
+  "type": "object",
+  "required": [
+    "batch_id",
+    "pattern_type",
+    "pattern",
+    "support",
+    "severity_distribution",
+    "dominant_severity",
+    "purity",
+    "entropy",
+    "examples",
+    "counterexamples"
+  ],
+  "properties": {
+    "batch_id": { "type": "string" },
+    "pattern_type": { "type": "string" },
+    "pattern": { "type": "string" },
+    "support": { "type": "integer" },
+    "severity_distribution": {
+      "type": "object",
+      "additionalProperties": { "type": "integer" }
+    },
+    "dominant_severity": { "type": ["string", "null"] },
+    "purity": { "type": "number" },
+    "entropy": { "type": "number" },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "severity"],
+        "properties": {
+          "rule": { "type": "string" },
+          "severity": { "type": "string" }
+        }
+      }
+    },
+    "counterexamples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "severity"],
+        "properties": {
+          "rule": { "type": "string" },
+          "severity": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+

@@ -923,6 +923,9 @@ def structural_similarity(new_toks: list[str], master_toks: list[str]) -> dict[s
     prefix = _common_prefix_len(new_toks, master_toks)
     suffix = _common_suffix_len(new_toks, master_toks)
     order_ratio = SequenceMatcher(a=new_toks, b=master_toks, autojunk=False).ratio()
+    # Suffix gets the second biggest weight because alarm rules 
+    # often put the event/action near the end:
+    # matching the right-side event phrase is usually important for severity.
     score = (
         0.45 * (lcs / denom)
         + 0.30 * (suffix / max(len(new_toks), 1))
