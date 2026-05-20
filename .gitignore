@@ -1,0 +1,32 @@
+# OS-specific files (e.g., Mac or Windows system files)
+.DS_Store
+Thumbs.db
+
+# Build artifacts and compiled code
+dist/
+build/
+*.exe
+*.o
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Dependencies (don't commit these; use package managers instead)
+node_modules/
+vendor/
+venv/
+
+# Environment variables and secrets
+.env
+*.pem
+secrets.json
+
+# IDE and Text Editor settings
+.vscode/
+.idea/
+*.swp

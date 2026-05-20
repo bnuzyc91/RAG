@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from knowledge_builder.tools.validation_tools import normalize_markdown_fragment
+
 
 CONFIDENCE_BY_PURITY = [
     (0.95, "High"),
@@ -95,8 +97,9 @@ distribution. Treat this as evidence-backed guidance, not an absolute rule.
 def write_knowledge_fragment(fragment_path: str | Path, markdown: str) -> dict:
     path = Path(fragment_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(markdown, encoding="utf-8")
-    return {"path": str(path), "bytes": len(markdown.encode("utf-8"))}
+    cleaned = normalize_markdown_fragment(markdown)
+    path.write_text(cleaned, encoding="utf-8")
+    return {"path": str(path), "bytes": len(cleaned.encode("utf-8"))}
 
 
 def read_knowledge_fragment(fragment_path: str | Path) -> str:
@@ -108,4 +111,3 @@ def write_json(path: str | Path, payload: dict | list) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return {"path": str(output)}
-

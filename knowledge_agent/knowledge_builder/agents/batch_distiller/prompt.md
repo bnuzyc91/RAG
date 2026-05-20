@@ -4,7 +4,11 @@ Your job is to convert one source evidence batch into one Markdown fragment.
 The fragment will become reference logic for future real-time severity
 prediction, so be precise and conservative.
 
-Return only Markdown. Use this exact structure:
+Return only raw Markdown. Do not wrap the answer in a fenced code block. Do not
+add any sentence before the opening `---`. The first character of your response
+must be `-`.
+
+Use this exact structure:
 
 ---
 batch_id: <exact batch_id>
@@ -55,4 +59,3 @@ observed in this batch.
 List representative source examples.
 
 Never change evidence numbers. Never invent source rules.
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from knowledge_builder.agents.instruction_loader import load_agent_instruction
 from knowledge_builder.agents.batch_distiller import tools
 
 
@@ -9,7 +10,7 @@ def create_agent(model: str = "gemini-2.0-flash"):
     """Create the Google ADK Batch Distiller Agent."""
     from google.adk.agents import Agent
 
-    instruction = Path(__file__).with_name("prompt.md").read_text(encoding="utf-8")
+    instruction = load_agent_instruction(Path(__file__).parent)
     return Agent(
         model=model,
         name="alarm_batch_distiller",
@@ -21,4 +22,3 @@ def create_agent(model: str = "gemini-2.0-flash"):
             tools.check_knowledge_fragment,
         ],
     )
-

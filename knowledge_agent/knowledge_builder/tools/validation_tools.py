@@ -26,6 +26,7 @@ class ValidationResult:
 
 
 def parse_frontmatter(markdown: str) -> dict[str, str]:
+    markdown = normalize_markdown_fragment(markdown)
     if not markdown.startswith("---"):
         return {}
     match = re.match(r"^---\n(.*?)\n---", markdown, flags=re.DOTALL)
@@ -38,6 +39,23 @@ def parse_frontmatter(markdown: str) -> dict[str, str]:
         key, value = line.split(":", 1)
         metadata[key.strip()] = value.strip()
     return metadata
+
+
+def normalize_markdown_fragment(markdown: str) -> str:
+    """Normalize common LLM output wrappers before validation.
+
+    ADK/LLM responses sometimes wrap Markdown in code fences or include leading
+    whitespace. The knowledge fragment still needs to start with YAML
+    frontmatter after normalization.
+    """
+    text = markdown.strip().lstrip("\ufeff")
+    fence_match = re.match(r"^```(?:markdown|md)?\s*\n(.*?)\n```$", text, flags=re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+    frontmatter_match = re.search(r"---\n.*?\n---", text, flags=re.DOTALL)
+    if frontmatter_match and frontmatter_match.start() > 0:
+        text = text[frontmatter_match.start():].strip()
+    return text
 
 
 def validate_fragment(markdown: str, evidence: dict | None = None) -> ValidationResult:
@@ -118,4 +136,3 @@ def _has_high_severity_counterexample(evidence: dict) -> bool:
         if item.get("severity", "").lower() in {"high", "critical"}:
             return True
     return False
-
