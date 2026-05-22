@@ -197,6 +197,11 @@ quality profile now forces very large groups to split when supported child
 suffixes exist, and the evidence includes child suffix distributions so the
 agent can learn an internal taxonomy rather than one generic default.
 
+`max_batch_support` is a hard cap for emitted LLM batches. If a group is still
+too large after suffix splitting reaches `max_depth`, the builder creates
+deterministic `suffix_part` mini-batches ordered by structural suffix. These
+overflow parts are a last resort to avoid one large, complex, mixed LLM call.
+
 ## Resume After API Failure
 
 Use the same `--work-dir` and add:

@@ -176,14 +176,46 @@ def _split_suffix_group(
         can_split = depth < max_depth and any(len(rule.tokens) > depth for rule in grouped)
 
         if (group_purity >= pure_threshold and not _too_large(grouped, max_batch_support)) or not can_split:
-            batches.append(
-                _make_batch(
+            batches.extend(
+                _make_capped_batches(
                     "suffix",
                     pattern,
                     grouped,
                     all_rules=all_rules,
                     current_depth=depth,
                     max_examples=max_examples,
+                    max_batch_support=max_batch_support,
+                )
+            )
+            continue
+
+        if _too_large(grouped, max_batch_support):
+            child_batches = _split_suffix_group(
+                grouped,
+                all_rules=all_rules,
+                depth=depth + 1,
+                max_depth=max_depth,
+                min_support=min_support,
+                pure_threshold=pure_threshold,
+                max_examples=max_examples,
+                max_batch_support=max_batch_support,
+                min_split_support=min_split_support,
+                min_information_gain=min_information_gain,
+                min_child_coverage=0.0,
+            )
+            if child_batches:
+                batches.extend(child_batches)
+                continue
+
+            batches.extend(
+                _make_capped_batches(
+                    "suffix",
+                    pattern,
+                    grouped,
+                    all_rules=all_rules,
+                    current_depth=depth,
+                    max_examples=max_examples,
+                    max_batch_support=max_batch_support,
                 )
             )
             continue
@@ -198,14 +230,15 @@ def _split_suffix_group(
             min_information_gain=min_information_gain,
             min_child_coverage=min_child_coverage,
         ):
-            batches.append(
-                _make_batch(
+            batches.extend(
+                _make_capped_batches(
                     "suffix",
                     pattern,
                     grouped,
                     all_rules=all_rules,
                     current_depth=depth,
                     max_examples=max_examples,
+                    max_batch_support=max_batch_support,
                 )
             )
             continue
@@ -226,14 +259,15 @@ def _split_suffix_group(
         if child_batches:
             batches.extend(child_batches)
         else:
-            batches.append(
-                _make_batch(
+            batches.extend(
+                _make_capped_batches(
                     "suffix",
                     pattern,
                     grouped,
                     all_rules=all_rules,
                     current_depth=depth,
                     max_examples=max_examples,
+                    max_batch_support=max_batch_support,
                 )
             )
 
@@ -288,6 +322,7 @@ def _make_batch(
     all_rules: list[AlarmRule],
     current_depth: int,
     max_examples: int,
+    batch_id_suffix: str = "",
 ) -> EvidenceBatch:
     counts = Counter(rule.severity for rule in rules)
     dom = dominant_severity(counts)
@@ -312,7 +347,7 @@ def _make_batch(
     ]
     safe_pattern = pattern.replace("/", "_").replace(" ", "_")
     return EvidenceBatch(
-        batch_id=f"{pattern_type}__{safe_pattern}",
+        batch_id=f"{pattern_type}__{safe_pattern}{batch_id_suffix}",
         pattern_type=pattern_type,
         pattern=pattern,
         support=len(rules),
@@ -329,6 +364,68 @@ def _make_batch(
             current_suffix_depth=current_depth,
         ),
     )
+
+
+def _make_capped_batches(
+    pattern_type: str,
+    pattern: str,
+    rules: list[AlarmRule],
+    *,
+    all_rules: list[AlarmRule],
+    current_depth: int,
+    max_examples: int,
+    max_batch_support: int,
+) -> list[EvidenceBatch]:
+    if not _too_large(rules, max_batch_support):
+        return [
+            _make_batch(
+                pattern_type,
+                pattern,
+                rules,
+                all_rules=all_rules,
+                current_depth=current_depth,
+                max_examples=max_examples,
+            )
+        ]
+
+    chunks = _chunk_rules_for_distillation(rules, max_batch_support)
+    batches = []
+    for index, chunk in enumerate(chunks, start=1):
+        batches.append(
+            _make_batch(
+                f"{pattern_type}_part",
+                pattern,
+                chunk,
+                all_rules=all_rules,
+                current_depth=current_depth,
+                max_examples=max_examples,
+                batch_id_suffix=f"__PART-{index:03d}",
+            )
+        )
+    return batches
+
+
+def _chunk_rules_for_distillation(rules: list[AlarmRule], max_batch_support: int) -> list[list[AlarmRule]]:
+    ordered = sorted(
+        rules,
+        key=lambda rule: (
+            _structural_sort_key(rule.tokens),
+            rule.rule,
+            rule.severity,
+            rule.source_rule_id,
+        ),
+    )
+    return [
+        ordered[start : start + max_batch_support]
+        for start in range(0, len(ordered), max_batch_support)
+    ]
+
+
+def _structural_sort_key(tokens: list[str]) -> str:
+    if not tokens:
+        return ""
+    start = max(0, len(tokens) - 5)
+    return "-".join(tokens[start:])
 
 
 def build_structural_context(

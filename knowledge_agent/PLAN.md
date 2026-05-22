@@ -176,6 +176,12 @@ as a container/taxonomy rather than a standalone severity rule. The useful
 knowledge should come from child suffixes, internal phrases, high-signal tokens,
 and exception patterns.
 
+`max_batch_support` is enforced as a hard cap on emitted LLM batches. If a
+large group cannot be split further by suffix, the builder emits deterministic
+`suffix_part` mini-batches ordered by structural suffix. These overflow parts
+prevent one large mixed call while keeping all source rules traceable in the SME
+review CSV.
+
 ## Agent Organization
 
 Each agent is organized as a skill plus tools:
