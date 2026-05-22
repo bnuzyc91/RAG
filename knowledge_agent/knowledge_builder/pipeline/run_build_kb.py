@@ -20,6 +20,7 @@ from knowledge_builder.tools.merge_tools import (
     write_merged_outputs,
 )
 from knowledge_builder.tools.validation_tools import needs_critic, validate_fragment
+from knowledge_builder.tools.fragment_tools import read_knowledge_fragment
 
 
 def main() -> None:
@@ -38,10 +39,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--critic-mode", choices=["template", "adk", "off"], default="template")
     parser.add_argument("--curation-mode", choices=["direct", "agent"], default="direct")
     parser.add_argument("--model", default="gemini-2.0-flash")
-    parser.add_argument("--max-depth", type=int, default=3)
-    parser.add_argument("--min-support", type=int, default=3)
-    parser.add_argument("--pure-threshold", type=float, default=0.9)
+    parser.add_argument("--batch-profile", choices=["detailed", "quality"], default="detailed")
+    parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--min-support", type=int, default=None)
+    parser.add_argument("--pure-threshold", type=float, default=None)
+    parser.add_argument("--min-split-support", type=int, default=None)
+    parser.add_argument("--min-information-gain", type=float, default=None)
+    parser.add_argument("--min-child-coverage", type=float, default=None)
     parser.add_argument("--limit-batches", type=int, default=0)
+    parser.add_argument("--resume", action="store_true", help="Skip already-valid fragments in work dir.")
+    parser.add_argument("--force", action="store_true", help="Regenerate fragments even when --resume is set.")
+    parser.add_argument("--plan-only", action="store_true", help="Only create evidence batches and print count.")
     return parser.parse_args()
 
 
@@ -53,17 +61,32 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
     rejected_dir = work_dir / "rejected_fragments"
     critique_dir = work_dir / "critiques"
     curator_plan_path = work_dir / "curator_plan.json"
+    progress_path = work_dir / "progress.jsonl"
 
     rules = load_rules_csv(args.master)
+    batch_config = resolve_batch_config(args)
     batches = build_suffix_batches(
         rules,
-        max_depth=args.max_depth,
-        min_support=args.min_support,
-        pure_threshold=args.pure_threshold,
+        max_depth=batch_config["max_depth"],
+        min_support=batch_config["min_support"],
+        pure_threshold=batch_config["pure_threshold"],
+        min_split_support=batch_config["min_split_support"],
+        min_information_gain=batch_config["min_information_gain"],
+        min_child_coverage=batch_config["min_child_coverage"],
     )
     if args.limit_batches:
         batches = batches[: args.limit_batches]
     batch_paths = write_evidence_batches(batches, evidence_dir)
+
+    if args.plan_only:
+        return {
+            "rules_loaded": len(rules),
+            "batches_created": len(batch_paths),
+            "batch_profile": args.batch_profile,
+            "batch_config": batch_config,
+            "work_dir": str(work_dir),
+            "evidence_dir": str(evidence_dir),
+        }
 
     distill_agent = None
     if args.distill_mode == "adk":
@@ -80,13 +103,44 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
     fragment_results = []
     for batch_path in batch_paths:
         evidence = read_evidence_batch(batch_path)
-        markdown = await distill_fragment(
-            evidence=evidence,
-            batch_path=batch_path,
-            mode=args.distill_mode,
-            agent=distill_agent,
-        )
         fragment_path = fragment_dir / f"{evidence['batch_id']}.md"
+
+        if args.resume and not args.force and fragment_path.exists():
+            existing = read_knowledge_fragment(fragment_path)
+            existing_validation = validate_fragment(existing, evidence)
+            if existing_validation.ok:
+                result = {
+                    "batch_id": evidence["batch_id"],
+                    "fragment_path": str(fragment_path),
+                    "ok": True,
+                    "skipped": True,
+                    "blocking": [],
+                    "warnings": existing_validation.warnings,
+                    "critique_path": None,
+                }
+                fragment_results.append(result)
+                append_progress(progress_path, {"status": "skipped", **result})
+                continue
+
+        try:
+            markdown = await distill_fragment(
+                evidence=evidence,
+                batch_path=batch_path,
+                mode=args.distill_mode,
+                agent=distill_agent,
+            )
+        except Exception as exc:
+            append_progress(
+                progress_path,
+                {
+                    "status": "failed",
+                    "batch_id": evidence["batch_id"],
+                    "batch_path": str(batch_path),
+                    "error": repr(exc),
+                },
+            )
+            raise
+
         write_knowledge_fragment(fragment_path, markdown)
 
         validation = validate_fragment(markdown, evidence)
@@ -109,16 +163,17 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
             rejected_path.write_text(markdown, encoding="utf-8")
             fragment_path.unlink(missing_ok=True)
 
-        fragment_results.append(
-            {
-                "batch_id": evidence["batch_id"],
-                "fragment_path": str(fragment_path),
-                "ok": validation.ok,
-                "blocking": validation.blocking,
-                "warnings": validation.warnings,
-                "critique_path": str(critique_path) if critique_path else None,
-            }
-        )
+        result = {
+            "batch_id": evidence["batch_id"],
+            "fragment_path": str(fragment_path),
+            "ok": validation.ok,
+            "skipped": False,
+            "blocking": validation.blocking,
+            "warnings": validation.warnings,
+            "critique_path": str(critique_path) if critique_path else None,
+        }
+        fragment_results.append(result)
+        append_progress(progress_path, {"status": "completed" if validation.ok else "rejected", **result})
 
     if args.curation_mode == "agent":
         await curate_fragments(fragment_dir, curator_plan_path, args.model)
@@ -133,11 +188,54 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         "rules_loaded": len(rules),
         "batches_created": len(batch_paths),
         "fragments_merged": len(fragments),
+        "batch_profile": args.batch_profile,
+        "batch_config": batch_config,
         "work_dir": str(work_dir),
+        "progress": str(progress_path),
         "knowledge_base": merged["markdown"],
         "index": merged["index"],
         "fragment_results": fragment_results,
     }
+
+
+def resolve_batch_config(args: argparse.Namespace) -> dict:
+    profiles = {
+        "detailed": {
+            "max_depth": 3,
+            "min_support": 3,
+            "pure_threshold": 0.9,
+            "min_split_support": 0,
+            "min_information_gain": 0.0,
+            "min_child_coverage": 0.0,
+        },
+        "quality": {
+            "max_depth": 3,
+            "min_support": 10,
+            "pure_threshold": 0.85,
+            "min_split_support": 30,
+            "min_information_gain": 0.08,
+            "min_child_coverage": 0.70,
+        },
+    }
+    config = dict(profiles[args.batch_profile])
+    for key in (
+        "max_depth",
+        "min_support",
+        "pure_threshold",
+        "min_split_support",
+        "min_information_gain",
+        "min_child_coverage",
+    ):
+        value = getattr(args, key)
+        if value is not None:
+            config[key] = value
+    return config
+
+
+def append_progress(progress_path: Path, payload: dict) -> None:
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    with progress_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 async def distill_fragment(
@@ -254,4 +352,3 @@ def extract_json_object(text: str) -> dict:
 
 if __name__ == "__main__":
     main()
-

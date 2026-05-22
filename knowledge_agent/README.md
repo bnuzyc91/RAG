@@ -49,6 +49,61 @@ python -m knowledge_builder.pipeline.run_build_kb \
   --model gemini-2.0-flash
 ```
 
+## Fewer Higher-Quality Batches
+
+Use the quality batch profile to avoid creating many tiny suffix-only batches:
+
+```bash
+PYTHONPATH=/Users/yichenzhou/Documents/GitHub/RAG/knowledge_agent \
+python -m knowledge_builder.pipeline.run_build_kb \
+  --master /path/to/master_rules.csv \
+  --out /tmp/alarm_rule_knowledge.md \
+  --work-dir /tmp/alarm_kb_quality_work \
+  --batch-profile quality \
+  --distill-mode adk \
+  --curation-mode direct \
+  --resume
+```
+
+The quality profile uses broader batch gates:
+
+- `min_support`: 10
+- `min_split_support`: 30
+- `min_information_gain`: 0.08
+- `min_child_coverage`: 0.70
+- `pure_threshold`: 0.85
+
+This means a suffix group is only split into more specific batches when the
+split has enough support, covers enough of the parent group, and improves the
+severity signal. The result should be fewer, stronger batches than the detailed
+profile.
+
+To estimate the batch count without making LLM calls:
+
+```bash
+PYTHONPATH=/Users/yichenzhou/Documents/GitHub/RAG/knowledge_agent \
+python -m knowledge_builder.pipeline.run_build_kb \
+  --master /path/to/master_rules.csv \
+  --out /tmp/alarm_rule_knowledge.md \
+  --work-dir /tmp/alarm_kb_quality_work \
+  --batch-profile quality \
+  --plan-only
+```
+
+## Resume After API Failure
+
+Use the same `--work-dir` and add `--resume`. The pipeline skips any existing
+fragment that still passes validation and continues with the remaining batches.
+
+Progress is appended to:
+
+```text
+<work-dir>/progress.jsonl
+```
+
+Use `--force` with `--resume` when you intentionally want to regenerate all
+fragments in the work directory.
+
 ## Expected Input
 
 CSV with columns:
@@ -64,4 +119,3 @@ CSV with columns:
 - generated fragments under the selected work directory
 - critique reports for risky fragments
 - optional curator plan
-

@@ -59,6 +59,17 @@ def entropy(counts: dict[str, int] | Counter[str]) -> float:
     return -sum((count / total) * math.log2(count / total) for count in counts.values() if count)
 
 
+def information_gain(parent: Counter[str], child_counts: Iterable[Counter[str]]) -> float:
+    total = sum(parent.values())
+    if total == 0:
+        return 0.0
+    return entropy(parent) - sum(
+        (sum(child.values()) / total) * entropy(child)
+        for child in child_counts
+        if sum(child.values()) > 0
+    )
+
+
 def purity(counts: dict[str, int] | Counter[str]) -> float:
     total = sum(counts.values())
     if total == 0:
@@ -85,6 +96,9 @@ def build_suffix_batches(
     min_support: int = 3,
     pure_threshold: float = 0.9,
     max_examples: int = 8,
+    min_split_support: int = 0,
+    min_information_gain: float = 0.0,
+    min_child_coverage: float = 0.0,
 ) -> list[EvidenceBatch]:
     """Create suffix-first batches.
 
@@ -100,6 +114,9 @@ def build_suffix_batches(
         min_support=min_support,
         pure_threshold=pure_threshold,
         max_examples=max_examples,
+        min_split_support=min_split_support,
+        min_information_gain=min_information_gain,
+        min_child_coverage=min_child_coverage,
     )
 
 
@@ -112,6 +129,9 @@ def _split_suffix_group(
     min_support: int,
     pure_threshold: float,
     max_examples: int,
+    min_split_support: int,
+    min_information_gain: float,
+    min_child_coverage: float,
 ) -> list[EvidenceBatch]:
     groups: dict[str, list[AlarmRule]] = defaultdict(list)
     for rule in rules:
@@ -132,6 +152,20 @@ def _split_suffix_group(
             )
             continue
 
+        if not _split_is_worthwhile(
+            grouped,
+            depth=depth + 1,
+            parent_counts=counts,
+            min_support=min_support,
+            min_split_support=min_split_support,
+            min_information_gain=min_information_gain,
+            min_child_coverage=min_child_coverage,
+        ):
+            batches.append(
+                _make_batch("suffix", pattern, grouped, all_rules=all_rules, max_examples=max_examples)
+            )
+            continue
+
         child_batches = _split_suffix_group(
             grouped,
             all_rules=all_rules,
@@ -140,6 +174,9 @@ def _split_suffix_group(
             min_support=min_support,
             pure_threshold=pure_threshold,
             max_examples=max_examples,
+            min_split_support=min_split_support,
+            min_information_gain=min_information_gain,
+            min_child_coverage=min_child_coverage,
         )
         if child_batches:
             batches.extend(child_batches)
@@ -149,6 +186,38 @@ def _split_suffix_group(
             )
 
     return batches
+
+
+def _split_is_worthwhile(
+    rules: list[AlarmRule],
+    *,
+    depth: int,
+    parent_counts: Counter[str],
+    min_support: int,
+    min_split_support: int,
+    min_information_gain: float,
+    min_child_coverage: float,
+) -> bool:
+    if min_split_support and len(rules) < min_split_support:
+        return False
+
+    groups: dict[str, list[AlarmRule]] = defaultdict(list)
+    for rule in rules:
+        groups[suffix_pattern(rule.tokens, depth)].append(rule)
+
+    supported_groups = [group for group in groups.values() if len(group) >= min_support]
+    if len(supported_groups) < 2:
+        return False
+
+    coverage = sum(len(group) for group in supported_groups) / len(rules)
+    if coverage < min_child_coverage:
+        return False
+
+    gain = information_gain(parent_counts, [Counter(rule.severity for rule in group) for group in supported_groups])
+    if gain < min_information_gain:
+        return False
+
+    return True
 
 
 def _make_batch(
