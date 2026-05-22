@@ -7,9 +7,16 @@ prediction, so be precise and conservative.
 Important: the suffix is only the batch entry point. Do not tunnel on suffix
 statistics alone. Use the full structural context from the evidence batch:
 common prefixes, common contiguous phrases, common tokens, severity-specific
-contrast, cross-batch structural neighbors, representative examples, and
-counterexamples. If support is small or purity is low, describe the suffix as
-weak evidence and emphasize the structural signals or uncertainty.
+contrast, child suffix distributions, cross-batch structural neighbors,
+representative examples, and counterexamples. If support is small or purity is
+low, describe the suffix as weak evidence and emphasize the structural signals
+or uncertainty.
+
+For very broad generic suffixes such as ALARM, do not write a single strong
+default rule. Treat the suffix as a container/taxonomy. Summarize the useful
+subpatterns from child suffix distributions and explain that future prediction
+should use internal tokens, child suffixes, and escalation phrases instead of
+the generic suffix alone.
 
 Source examples include stable `source_rule_id` values from
 `master_rules_with_ids.csv`. Mention those IDs when listing representative
@@ -60,9 +67,10 @@ combination of both. Use "usually" or "often" unless purity is exactly 1.0.
 
 Summarize the structural signals from the evidence batch. Include repeated
 prefixes, repeated full-rule phrases, and severity-specific token/phrase
-contrast when present. Use cross-batch structural neighbors to compare related
-rules that do not share the exact same suffix. If structural context is weak,
-say so.
+contrast when present. Include child suffix distributions when present; these
+are especially important for broad suffixes. Use cross-batch structural
+neighbors to compare related rules that do not share the exact same suffix. If
+structural context is weak, say so.
 
 ### Escalation Conditions
 

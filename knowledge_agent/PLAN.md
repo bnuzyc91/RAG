@@ -111,9 +111,10 @@ produces fewer, broader batches and only splits suffix groups when the split is
 statistically useful.
 
 ```text
-max_depth: 3
+max_depth: 5
 min_support: 10
 pure_threshold: 0.85
+max_batch_support: 150
 min_split_support: 30
 min_information_gain: 0.08
 min_child_coverage: 0.70
@@ -123,6 +124,8 @@ Meaning:
 
 - `min_support`: a final emitted batch must have at least this many records
 - `pure_threshold`: if a group is this pure, keep it as a batch
+- `max_batch_support`: force very large broad groups to split when supported
+  child suffixes exist
 - `min_split_support`: do not split a parent group unless the parent has enough
   records
 - `min_information_gain`: split only when child groups improve severity
@@ -161,11 +164,17 @@ structural_context
 - common contiguous phrases
 - common tokens
 - severity-specific contrast
+- child suffix distributions
 - cross-batch structural neighbors
 
 This prevents the distiller from producing only a suffix/statistics summary.
 For low-support or low-purity batches, the agent should explicitly treat the
 suffix as weak evidence and explain the structural uncertainty.
+
+For broad low-purity suffixes such as `ALARM`, the agent should treat the suffix
+as a container/taxonomy rather than a standalone severity rule. The useful
+knowledge should come from child suffixes, internal phrases, high-signal tokens,
+and exception patterns.
 
 ## Agent Organization
 

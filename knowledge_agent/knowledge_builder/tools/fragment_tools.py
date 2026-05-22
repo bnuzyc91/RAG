@@ -137,6 +137,21 @@ def render_structural_context(context: dict) -> str:
                 f"tokens: {tokens}; phrases: {phrases}"
             )
 
+    child_suffixes = context.get("child_suffix_distributions") or []
+    if child_suffixes:
+        lines.append("")
+        lines.append("Child suffix distributions:")
+        for item in child_suffixes:
+            dist = ", ".join(
+                f"{severity}={count}"
+                for severity, count in item.get("severity_distribution", {}).items()
+            )
+            lines.append(
+                f"- `{item.get('suffix')}` support={item.get('support')}; "
+                f"dominant={item.get('dominant_severity')}; "
+                f"purity={item.get('purity')}; {dist}"
+            )
+
     neighbors = context.get("structural_neighbors") or []
     if neighbors:
         lines.append("")

@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-depth", type=int, default=None)
     parser.add_argument("--min-support", type=int, default=None)
     parser.add_argument("--pure-threshold", type=float, default=None)
+    parser.add_argument("--max-batch-support", type=int, default=None)
     parser.add_argument("--min-split-support", type=int, default=None)
     parser.add_argument("--min-information-gain", type=float, default=None)
     parser.add_argument("--min-child-coverage", type=float, default=None)
@@ -78,6 +79,7 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         max_depth=batch_config["max_depth"],
         min_support=batch_config["min_support"],
         pure_threshold=batch_config["pure_threshold"],
+        max_batch_support=batch_config["max_batch_support"],
         min_split_support=batch_config["min_split_support"],
         min_information_gain=batch_config["min_information_gain"],
         min_child_coverage=batch_config["min_child_coverage"],
@@ -227,14 +229,16 @@ def resolve_batch_config(args: argparse.Namespace) -> dict:
             "max_depth": 3,
             "min_support": 3,
             "pure_threshold": 0.9,
+            "max_batch_support": 0,
             "min_split_support": 0,
             "min_information_gain": 0.0,
             "min_child_coverage": 0.0,
         },
         "quality": {
-            "max_depth": 3,
+            "max_depth": 5,
             "min_support": 10,
             "pure_threshold": 0.85,
+            "max_batch_support": 150,
             "min_split_support": 30,
             "min_information_gain": 0.08,
             "min_child_coverage": 0.70,
@@ -245,6 +249,7 @@ def resolve_batch_config(args: argparse.Namespace) -> dict:
         "max_depth",
         "min_support",
         "pure_threshold",
+        "max_batch_support",
         "min_split_support",
         "min_information_gain",
         "min_child_coverage",

@@ -144,9 +144,10 @@ min_child_coverage: 0.0
 `quality` produces fewer, broader, higher-signal batches:
 
 ```text
-max_depth: 3
+max_depth: 5
 min_support: 10
 pure_threshold: 0.85
+max_batch_support: 150
 min_split_support: 30
 min_information_gain: 0.08
 min_child_coverage: 0.70
@@ -157,6 +158,7 @@ You can override profile values from the CLI:
 ```bash
 --min-support 20
 --pure-threshold 0.8
+--max-batch-support 200
 --min-split-support 50
 --min-information-gain 0.12
 --min-child-coverage 0.8
@@ -179,6 +181,7 @@ Each evidence batch includes:
 - common contiguous phrases
 - common tokens
 - severity-specific contrast
+- child suffix distributions
 - cross-batch structural neighbors
 
 This helps the agent learn patterns such as:
@@ -188,6 +191,11 @@ PROTECTION + BATTERY + VOLTAGE -> possible escalation
 UPS/DC-SYSTEM + BATTERY-VOLTAGE-ALARM -> often diagnostic monitoring
 LOW-VOLTAGE-ALARM neighbor -> useful high-severity comparison
 ```
+
+Broad low-purity suffixes such as `ALARM` are not good standalone rules. The
+quality profile now forces very large groups to split when supported child
+suffixes exist, and the evidence includes child suffix distributions so the
+agent can learn an internal taxonomy rather than one generic default.
 
 ## Resume After API Failure
 

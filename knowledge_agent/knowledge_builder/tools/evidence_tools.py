@@ -122,6 +122,7 @@ def build_suffix_batches(
     min_support: int = 3,
     pure_threshold: float = 0.9,
     max_examples: int = 8,
+    max_batch_support: int = 0,
     min_split_support: int = 0,
     min_information_gain: float = 0.0,
     min_child_coverage: float = 0.0,
@@ -140,6 +141,7 @@ def build_suffix_batches(
         min_support=min_support,
         pure_threshold=pure_threshold,
         max_examples=max_examples,
+        max_batch_support=max_batch_support,
         min_split_support=min_split_support,
         min_information_gain=min_information_gain,
         min_child_coverage=min_child_coverage,
@@ -155,6 +157,7 @@ def _split_suffix_group(
     min_support: int,
     pure_threshold: float,
     max_examples: int,
+    max_batch_support: int,
     min_split_support: int,
     min_information_gain: float,
     min_child_coverage: float,
@@ -172,9 +175,16 @@ def _split_suffix_group(
         group_purity = purity(counts)
         can_split = depth < max_depth and any(len(rule.tokens) > depth for rule in grouped)
 
-        if group_purity >= pure_threshold or not can_split:
+        if (group_purity >= pure_threshold and not _too_large(grouped, max_batch_support)) or not can_split:
             batches.append(
-                _make_batch("suffix", pattern, grouped, all_rules=all_rules, max_examples=max_examples)
+                _make_batch(
+                    "suffix",
+                    pattern,
+                    grouped,
+                    all_rules=all_rules,
+                    current_depth=depth,
+                    max_examples=max_examples,
+                )
             )
             continue
 
@@ -183,12 +193,20 @@ def _split_suffix_group(
             depth=depth + 1,
             parent_counts=counts,
             min_support=min_support,
+            max_batch_support=max_batch_support,
             min_split_support=min_split_support,
             min_information_gain=min_information_gain,
             min_child_coverage=min_child_coverage,
         ):
             batches.append(
-                _make_batch("suffix", pattern, grouped, all_rules=all_rules, max_examples=max_examples)
+                _make_batch(
+                    "suffix",
+                    pattern,
+                    grouped,
+                    all_rules=all_rules,
+                    current_depth=depth,
+                    max_examples=max_examples,
+                )
             )
             continue
 
@@ -200,6 +218,7 @@ def _split_suffix_group(
             min_support=min_support,
             pure_threshold=pure_threshold,
             max_examples=max_examples,
+            max_batch_support=max_batch_support,
             min_split_support=min_split_support,
             min_information_gain=min_information_gain,
             min_child_coverage=min_child_coverage,
@@ -208,7 +227,14 @@ def _split_suffix_group(
             batches.extend(child_batches)
         else:
             batches.append(
-                _make_batch("suffix", pattern, grouped, all_rules=all_rules, max_examples=max_examples)
+                _make_batch(
+                    "suffix",
+                    pattern,
+                    grouped,
+                    all_rules=all_rules,
+                    current_depth=depth,
+                    max_examples=max_examples,
+                )
             )
 
     return batches
@@ -220,6 +246,7 @@ def _split_is_worthwhile(
     depth: int,
     parent_counts: Counter[str],
     min_support: int,
+    max_batch_support: int,
     min_split_support: int,
     min_information_gain: float,
     min_child_coverage: float,
@@ -239,11 +266,18 @@ def _split_is_worthwhile(
     if coverage < min_child_coverage:
         return False
 
+    if _too_large(rules, max_batch_support):
+        return True
+
     gain = information_gain(parent_counts, [Counter(rule.severity for rule in group) for group in supported_groups])
     if gain < min_information_gain:
         return False
 
     return True
+
+
+def _too_large(rules: list[AlarmRule], max_batch_support: int) -> bool:
+    return max_batch_support > 0 and len(rules) > max_batch_support
 
 
 def _make_batch(
@@ -252,6 +286,7 @@ def _make_batch(
     rules: list[AlarmRule],
     *,
     all_rules: list[AlarmRule],
+    current_depth: int,
     max_examples: int,
 ) -> EvidenceBatch:
     counts = Counter(rule.severity for rule in rules)
@@ -288,7 +323,11 @@ def _make_batch(
         examples=examples,
         counterexamples=counterexamples,
         source_records=source_records,
-        structural_context=build_structural_context(rules, all_rules=all_rules),
+        structural_context=build_structural_context(
+            rules,
+            all_rules=all_rules,
+            current_suffix_depth=current_depth,
+        ),
     )
 
 
@@ -296,6 +335,7 @@ def build_structural_context(
     rules: list[AlarmRule],
     *,
     all_rules: list[AlarmRule],
+    current_suffix_depth: int,
     max_items: int = 10,
 ) -> dict:
     """Summarize full-rule structure inside a batch.
@@ -334,6 +374,11 @@ def build_structural_context(
             max_items=max_items,
         ),
         "severity_contrast": _severity_contrast(rules, max_items=6),
+        "child_suffix_distributions": _child_suffix_distributions(
+            rules,
+            depth=current_suffix_depth + 1,
+            max_items=max_items,
+        ),
         "structural_neighbors": _structural_neighbors(rules, all_rules, max_items=max_items),
     }
 
@@ -392,6 +437,32 @@ def _severity_contrast(rules: list[AlarmRule], *, max_items: int) -> list[dict]:
             }
         )
     return out
+
+
+def _child_suffix_distributions(
+    rules: list[AlarmRule],
+    *,
+    depth: int,
+    max_items: int,
+) -> list[dict]:
+    groups: dict[str, list[AlarmRule]] = defaultdict(list)
+    for rule in rules:
+        if len(rule.tokens) >= depth:
+            groups[suffix_pattern(rule.tokens, depth)].append(rule)
+
+    rows = []
+    for pattern, grouped in groups.items():
+        counts = Counter(rule.severity for rule in grouped)
+        rows.append(
+            {
+                "suffix": pattern,
+                "support": len(grouped),
+                "dominant_severity": dominant_severity(counts),
+                "purity": round(purity(counts), 4),
+                "severity_distribution": dict(sorted(counts.items())),
+            }
+        )
+    return sorted(rows, key=lambda item: (-item["support"], item["suffix"]))[:max_items]
 
 
 def _structural_neighbors(
