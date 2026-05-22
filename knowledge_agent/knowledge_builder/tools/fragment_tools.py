@@ -42,6 +42,7 @@ def render_template_fragment(evidence: dict) -> str:
         else "Counterexamples indicate this pattern should be applied with care."
     )
     structural_context = render_structural_context(evidence.get("structural_context", {}))
+    contrastive_context = render_contrastive_context(evidence.get("contrastive_context", {}))
 
     return f"""---
 batch_id: {evidence["batch_id"]}
@@ -81,6 +82,10 @@ logic.
 ### Structural Context
 
 {structural_context}
+
+### Severity Split Logic
+
+{contrastive_context}
 
 ### Escalation Conditions
 
@@ -164,6 +169,50 @@ def render_structural_context(context: dict) -> str:
             )
 
     return "\n".join(lines).strip() or "No repeated structural signals were found."
+
+
+def render_contrastive_context(context: dict) -> str:
+    if not context:
+        return "No contrastive severity signals were generated for this batch."
+
+    lines: list[str] = []
+    totals = context.get("severity_totals") or {}
+    if totals:
+        dist = ", ".join(f"{severity}={count}" for severity, count in totals.items())
+        lines.append(f"Severity totals: {dist}")
+        lines.append("")
+
+    signals_by_severity = context.get("signals_by_severity") or {}
+    for severity, signals in signals_by_severity.items():
+        if not signals:
+            continue
+        lines.append(f"{severity} signals:")
+        for signal in signals[:8]:
+            distribution = ", ".join(
+                f"{sev}={count}"
+                for sev, count in signal.get("severity_distribution", {}).items()
+            )
+            lines.append(
+                f"- `{signal.get('feature')}` ({signal.get('feature_type')}): "
+                f"support={signal.get('support')}; purity={signal.get('purity')}; "
+                f"lift={signal.get('lift')}; {distribution}"
+            )
+        lines.append("")
+
+    pairwise = context.get("pairwise_contrasts") or []
+    if pairwise:
+        lines.append("Pairwise contrast summary:")
+        for contrast in pairwise[:4]:
+            left, right = contrast.get("severity_pair", ["", ""])
+            left_features = ", ".join(
+                item.get("feature", "") for item in contrast.get("left_signals", [])[:4]
+            ) or "none"
+            right_features = ", ".join(
+                item.get("feature", "") for item in contrast.get("right_signals", [])[:4]
+            ) or "none"
+            lines.append(f"- {left} vs {right}: {left} -> {left_features}; {right} -> {right_features}")
+
+    return "\n".join(lines).strip() or "No stable contrastive severity signals were found."
 
 
 def write_knowledge_fragment(fragment_path: str | Path, markdown: str) -> dict:

@@ -18,6 +18,7 @@ SME_REVIEW_FIELDS = [
     "purity",
     "entropy",
     "core_logic",
+    "severity_split_logic",
     "escalation_conditions",
     "exception_logic",
     "evidence_role",
@@ -62,6 +63,7 @@ def write_sme_review_evidence(
                 "purity": metadata.get("purity", ""),
                 "entropy": metadata.get("entropy", ""),
                 "core_logic": sections["core_logic"],
+                "severity_split_logic": sections["severity_split_logic"],
                 "escalation_conditions": sections["escalation_conditions"],
                 "exception_logic": sections["exception_logic"],
                 "sme_review_status": "",
@@ -178,6 +180,7 @@ def write_coverage_report(
 def extract_review_sections(markdown: str) -> dict[str, str]:
     return {
         "core_logic": _section(markdown, "Core Logic"),
+        "severity_split_logic": _section(markdown, "Severity Split Logic"),
         "escalation_conditions": _section(markdown, "Escalation Conditions"),
         "exception_logic": _section(markdown, "Exceptions"),
     }
@@ -189,4 +192,3 @@ def _section(markdown: str, heading: str) -> str:
     if not match:
         return ""
     return re.sub(r"\s+", " ", match.group(1).strip())
-

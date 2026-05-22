@@ -8,9 +8,9 @@ Important: the suffix is only the batch entry point. Do not tunnel on suffix
 statistics alone. Use the full structural context from the evidence batch:
 common prefixes, common contiguous phrases, common tokens, severity-specific
 contrast, child suffix distributions, cross-batch structural neighbors,
-representative examples, and counterexamples. If support is small or purity is
-low, describe the suffix as weak evidence and emphasize the structural signals
-or uncertainty.
+contrastive severity signals, representative examples, and counterexamples. If
+support is small or purity is low, describe the suffix as weak evidence and
+emphasize the structural signals or uncertainty.
 
 For very broad generic suffixes such as ALARM, do not write a single strong
 default rule. Treat the suffix as a container/taxonomy. Summarize the useful
@@ -71,6 +71,18 @@ contrast when present. Include child suffix distributions when present; these
 are especially important for broad suffixes. Use cross-batch structural
 neighbors to compare related rules that do not share the exact same suffix. If
 structural context is weak, say so.
+
+### Severity Split Logic
+
+Use the contrastive severity signals to explain what separates severities inside
+the batch. Prefer count-backed claims like:
+
+- `PRIMARY-MASTER` predicts Diagnostic with support N and purity P
+- `MULTIMEDIA-MESSAGING-SERVICE` predicts Medium with support N and purity P
+
+Do not claim a token or phrase is a reliable signal unless the evidence provides
+support and purity for it. If the contrastive signals are weak, say that no
+stable severity split was found.
 
 ### Escalation Conditions
 

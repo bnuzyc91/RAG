@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+from knowledge_builder.tools.contrastive_tools import build_contrastive_context
+
 
 @dataclass(frozen=True)
 class AlarmRule:
@@ -31,6 +33,7 @@ class EvidenceBatch:
     counterexamples: list[dict[str, str]]
     source_records: list[dict[str, str]]
     structural_context: dict
+    contrastive_context: dict
 
 
 def tokenize_rule(rule: str) -> list[str]:
@@ -363,6 +366,7 @@ def _make_batch(
             all_rules=all_rules,
             current_suffix_depth=current_depth,
         ),
+        contrastive_context=build_contrastive_context(rules),
     )
 
 

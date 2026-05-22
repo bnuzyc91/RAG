@@ -14,7 +14,8 @@
     "examples",
     "counterexamples",
     "source_records",
-    "structural_context"
+    "structural_context",
+    "contrastive_context"
   ],
   "properties": {
     "batch_id": { "type": "string" },
@@ -69,6 +70,9 @@
       }
     },
     "structural_context": {
+      "type": "object"
+    },
+    "contrastive_context": {
       "type": "object"
     }
   }

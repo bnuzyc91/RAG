@@ -23,6 +23,7 @@ Deterministic Evidence Builder
    |
    |-- suffix-first quality batches
    |-- structural context
+   |-- contrastive severity signals
    |-- cross-batch structural neighbors
    v
 Batch Distiller Agent
@@ -165,6 +166,7 @@ structural_context
 - common tokens
 - severity-specific contrast
 - child suffix distributions
+- contrastive severity signals with support, purity, and lift
 - cross-batch structural neighbors
 
 This prevents the distiller from producing only a suffix/statistics summary.
@@ -175,6 +177,18 @@ For broad low-purity suffixes such as `ALARM`, the agent should treat the suffix
 as a container/taxonomy rather than a standalone severity rule. The useful
 knowledge should come from child suffixes, internal phrases, high-signal tokens,
 and exception patterns.
+
+Mixed batches include deterministic contrastive feature mining. The builder
+counts tokens and contiguous phrases by severity and exposes only count-backed
+signals, such as:
+
+```text
+PRIMARY-MASTER -> Diagnostic, support=N, purity=P
+MULTIMEDIA-MESSAGING-SERVICE -> Medium, support=N, purity=P
+```
+
+The distiller should use those signals to write severity split logic, while the
+critic checks that claims are supported by evidence counts.
 
 `max_batch_support` is enforced as a hard cap on emitted LLM batches. If a
 large group cannot be split further by suffix, the builder emits deterministic
@@ -486,6 +500,7 @@ knowledge_base/
 - distilled pattern sections
 - observed evidence
 - core logic
+- severity split logic
 - structural context
 - escalation conditions
 - exceptions
