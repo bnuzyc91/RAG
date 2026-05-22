@@ -45,6 +45,17 @@ def sort_fragments(fragments: list[dict], curator_order: list[str] | None = None
     return sorted(fragments, key=key)
 
 
+def assign_ai_rule_ids(fragments: list[dict]) -> list[dict]:
+    assigned = []
+    for index, fragment in enumerate(fragments, start=1):
+        copied = dict(fragment)
+        metadata = dict(copied.get("metadata", {}))
+        metadata["ai_rule_id"] = f"AIRULE-{index:06d}"
+        copied["metadata"] = metadata
+        assigned.append(copied)
+    return assigned
+
+
 def build_knowledge_base(fragments: list[dict]) -> str:
     body = [
         "# Alarm Rule Severity Knowledge Base",
@@ -65,6 +76,9 @@ def build_knowledge_base(fragments: list[dict]) -> str:
         "",
     ]
     for fragment in fragments:
+        ai_rule_id = fragment["metadata"].get("ai_rule_id", "")
+        if ai_rule_id:
+            body.append(f"<!-- ai_rule_id: {ai_rule_id} -->")
         body.append(fragment["markdown"].strip())
         body.append("")
     return "\n".join(body).rstrip() + "\n"
@@ -76,6 +90,7 @@ def build_index(fragments: list[dict]) -> dict:
         metadata = fragment["metadata"]
         items.append(
             {
+                "ai_rule_id": metadata.get("ai_rule_id"),
                 "batch_id": metadata.get("batch_id"),
                 "pattern_type": metadata.get("pattern_type"),
                 "pattern": metadata.get("pattern"),
@@ -99,7 +114,7 @@ def write_merged_outputs(
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.write_text(build_knowledge_base(fragments), encoding="utf-8")
 
-    index_path = Path(index_out) if index_out else markdown_path.with_suffix(".index.json")
+    index_path = Path(index_out) if index_out else markdown_path.with_name(f"{markdown_path.stem}_index.json")
     index_path.write_text(json.dumps(build_index(fragments), indent=2), encoding="utf-8")
     return {"markdown": str(markdown_path), "index": str(index_path)}
 
@@ -116,4 +131,3 @@ def _float(value: str | None) -> float:
         return float(value or "0")
     except ValueError:
         return 0.0
-

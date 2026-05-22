@@ -29,11 +29,11 @@ def render_template_fragment(evidence: dict) -> str:
         for severity, count in sorted(evidence["severity_distribution"].items())
     )
     examples = "\n".join(
-        f"- `{item['rule']}` -> {item['severity']}"
+        f"- {item.get('source_rule_id', '')}: `{item['rule']}` -> {item['severity']}"
         for item in evidence.get("examples", [])
     ) or "- No representative examples available."
     counterexamples = "\n".join(
-        f"- `{item['rule']}` -> {item['severity']}"
+        f"- {item.get('source_rule_id', '')}: `{item['rule']}` -> {item['severity']}"
         for item in evidence.get("counterexamples", [])
     ) or "- No counterexamples observed in this batch."
     exception_note = (

@@ -25,12 +25,10 @@ Required columns:
 Outputs:
 
 - `alarm_rule_knowledge.md`
-- `alarm_rule_knowledge.index.json`
-- intermediate evidence batches
-- generated Markdown fragments
-- critique reports
-- optional curator plan
-- resumable progress log
+- `alarm_rule_knowledge_index.json`
+- `sme_review_evidence.csv`
+- `master_rules_with_ids.csv`
+- `coverage_report.md`
 
 ## Architecture
 
@@ -245,6 +243,53 @@ progress.jsonl
 Do not rebuild from the final `alarm_rule_knowledge.md`. It is already
 distilled and lossy. Rebuild from the original CSV plus the work directory.
 
+## SME Review Evidence CSV
+
+The SME review file is long format:
+
+```text
+one row = one AI rule + one original source rule evidence row
+```
+
+Columns:
+
+```text
+ai_rule_id
+batch_id
+pattern_type
+pattern
+default_severity
+confidence
+support
+purity
+entropy
+core_logic
+escalation_conditions
+exception_logic
+evidence_role
+source_rule_id
+source_rule
+source_severity
+source_relation
+structural_similarity_score
+shared_phrase
+sme_review_status
+sme_corrected_default_severity
+sme_comment
+```
+
+Evidence roles:
+
+- `representative`: in-batch source rule whose severity agrees with the AI
+  default severity
+- `exception`: in-batch source rule whose severity does not agree with the AI
+  default severity
+- `structural_neighbor`: out-of-batch source rule that is structurally similar
+  and useful review context
+
+`master_rules_with_ids.csv` is the traceable source-of-truth file for
+`source_rule_id`.
+
 ## Agent Layout
 
 Each agent is organized as:
@@ -303,4 +348,3 @@ hybrid batch builder:
   2. structural_phrase batches
   3. severity_exception batches
 ```
-

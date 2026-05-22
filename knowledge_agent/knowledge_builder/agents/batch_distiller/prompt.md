@@ -11,6 +11,11 @@ contrast, cross-batch structural neighbors, representative examples, and
 counterexamples. If support is small or purity is low, describe the suffix as
 weak evidence and emphasize the structural signals or uncertainty.
 
+Source examples include stable `source_rule_id` values from
+`master_rules_with_ids.csv`. Mention those IDs when listing representative
+examples or exceptions so human SMEs can trace the knowledge back to the
+original master rule file.
+
 Return only raw Markdown. Do not wrap the answer in a fenced code block. Do not
 add any sentence before the opening `---`. The first character of your response
 must be `-`.
@@ -72,6 +77,6 @@ observed in this batch.
 
 ### Representative Examples
 
-List representative source examples.
+List representative source examples with source rule IDs.
 
 Never change evidence numbers. Never invent source rules.

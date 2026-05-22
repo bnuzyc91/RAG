@@ -42,7 +42,10 @@ Merge mode:
    |
    v
 alarm_rule_knowledge.md
-alarm_rule_knowledge.index.json
+alarm_rule_knowledge_index.json
+sme_review_evidence.csv
+master_rules_with_ids.csv
+coverage_report.md
 ```
 
 ## Batch Strategy
@@ -451,7 +454,18 @@ python -m knowledge_builder.pipeline.run_build_kb \
 
 ## Final Knowledge Base Shape
 
-The merged knowledge base contains:
+The final user-facing output set is:
+
+```text
+knowledge_base/
+  alarm_rule_knowledge.md
+  alarm_rule_knowledge_index.json
+  sme_review_evidence.csv
+  master_rules_with_ids.csv
+  coverage_report.md
+```
+
+`alarm_rule_knowledge.md` is the agent-facing reasoning file. It contains:
 
 - prediction checklist
 - distilled pattern sections
@@ -462,8 +476,27 @@ The merged knowledge base contains:
 - exceptions
 - representative examples
 
-The merged JSON index lets a future prediction service retrieve relevant
-sections by suffix or pattern without parsing the full Markdown file.
+`alarm_rule_knowledge_index.json` lets a future prediction service retrieve
+relevant sections by suffix or pattern without parsing the full Markdown file.
+
+`sme_review_evidence.csv` is the human review dashboard. It is long format:
+
+```text
+one row = one AI rule + one original source rule evidence row
+```
+
+Evidence roles:
+
+- `representative`: in-batch source rule whose severity agrees with the AI
+  default severity
+- `exception`: in-batch source rule whose severity does not agree with the AI
+  default severity
+- `structural_neighbor`: out-of-batch source rule that is structurally similar
+  and useful review context
+
+`master_rules_with_ids.csv` assigns stable source IDs to the original
+`Rule, Severity` rows. `coverage_report.md` summarizes total rules, AI rules,
+coverage, low-confidence rules, and High/Critical exceptions.
 
 ## Known Limitation And Next Improvement
 

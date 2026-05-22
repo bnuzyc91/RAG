@@ -11,6 +11,7 @@ from typing import Iterable
 
 @dataclass(frozen=True)
 class AlarmRule:
+    source_rule_id: str
     rule: str
     severity: str
     tokens: list[str]
@@ -28,6 +29,7 @@ class EvidenceBatch:
     entropy: float
     examples: list[dict[str, str]]
     counterexamples: list[dict[str, str]]
+    source_records: list[dict[str, str]]
     structural_context: dict
 
 
@@ -43,13 +45,37 @@ def load_rules_csv(csv_path: str | Path) -> list[AlarmRule]:
         if missing:
             raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
         rules = []
-        for row in reader:
+        for index, row in enumerate(reader, start=1):
             rule = (row.get("Rule") or "").strip()
             severity = (row.get("Severity") or "").strip()
             if not rule or not severity:
                 continue
-            rules.append(AlarmRule(rule=rule, severity=severity, tokens=tokenize_rule(rule)))
+            rules.append(
+                AlarmRule(
+                    source_rule_id=f"R{index:06d}",
+                    rule=rule,
+                    severity=severity,
+                    tokens=tokenize_rule(rule),
+                )
+            )
     return rules
+
+
+def write_master_rules_with_ids(rules: Iterable[AlarmRule], output_path: str | Path) -> Path:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["source_rule_id", "rule", "severity"])
+        writer.writeheader()
+        for rule in rules:
+            writer.writerow(
+                {
+                    "source_rule_id": rule.source_rule_id,
+                    "rule": rule.rule,
+                    "severity": rule.severity,
+                }
+            )
+    return path
 
 
 def entropy(counts: dict[str, int] | Counter[str]) -> float:
@@ -231,15 +257,24 @@ def _make_batch(
     counts = Counter(rule.severity for rule in rules)
     dom = dominant_severity(counts)
     examples = [
-        {"rule": rule.rule, "severity": rule.severity}
+        {"source_rule_id": rule.source_rule_id, "rule": rule.rule, "severity": rule.severity}
         for rule in rules
         if rule.severity == dom
     ][:max_examples]
     counterexamples = [
-        {"rule": rule.rule, "severity": rule.severity}
+        {"source_rule_id": rule.source_rule_id, "rule": rule.rule, "severity": rule.severity}
         for rule in rules
         if rule.severity != dom
     ][:max_examples]
+    source_records = [
+        {
+            "source_rule_id": rule.source_rule_id,
+            "rule": rule.rule,
+            "severity": rule.severity,
+            "evidence_role": "representative" if rule.severity == dom else "exception",
+        }
+        for rule in rules
+    ]
     safe_pattern = pattern.replace("/", "_").replace(" ", "_")
     return EvidenceBatch(
         batch_id=f"{pattern_type}__{safe_pattern}",
@@ -252,6 +287,7 @@ def _make_batch(
         entropy=round(entropy(counts), 4),
         examples=examples,
         counterexamples=counterexamples,
+        source_records=source_records,
         structural_context=build_structural_context(rules, all_rules=all_rules),
     )
 
@@ -346,7 +382,11 @@ def _severity_contrast(rules: list[AlarmRule], *, max_items: int) -> list[dict]:
                 "distinctive_tokens": distinctive_tokens,
                 "distinctive_phrases": distinctive_phrases,
                 "examples": [
-                    {"rule": rule.rule, "severity": rule.severity}
+                    {
+                        "source_rule_id": rule.source_rule_id,
+                        "rule": rule.rule,
+                        "severity": rule.severity,
+                    }
                     for rule in severity_rules[:3]
                 ],
             }
@@ -379,6 +419,7 @@ def _structural_neighbors(
             candidates.append(
                 {
                     "rule": candidate.rule,
+                    "source_rule_id": candidate.source_rule_id,
                     "severity": candidate.severity,
                     "score": round(best["score"], 4),
                     "shared_phrase": best["shared_phrase"],

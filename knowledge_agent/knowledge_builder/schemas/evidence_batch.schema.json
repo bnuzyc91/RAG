@@ -13,6 +13,7 @@
     "entropy",
     "examples",
     "counterexamples",
+    "source_records",
     "structural_context"
   ],
   "properties": {
@@ -31,8 +32,9 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["rule", "severity"],
+        "required": ["source_rule_id", "rule", "severity"],
         "properties": {
+          "source_rule_id": { "type": "string" },
           "rule": { "type": "string" },
           "severity": { "type": "string" }
         }
@@ -42,10 +44,27 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["rule", "severity"],
+        "required": ["source_rule_id", "rule", "severity"],
         "properties": {
+          "source_rule_id": { "type": "string" },
           "rule": { "type": "string" },
           "severity": { "type": "string" }
+        }
+      }
+    },
+    "source_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_rule_id", "rule", "severity", "evidence_role"],
+        "properties": {
+          "source_rule_id": { "type": "string" },
+          "rule": { "type": "string" },
+          "severity": { "type": "string" },
+          "evidence_role": {
+            "type": "string",
+            "enum": ["representative", "exception"]
+          }
         }
       }
     },

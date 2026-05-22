@@ -10,15 +10,18 @@ from knowledge_builder.tools.evidence_tools import (
     build_suffix_batches,
     load_rules_csv,
     read_evidence_batch,
+    write_master_rules_with_ids,
     write_evidence_batches,
 )
 from knowledge_builder.tools.fragment_tools import render_template_fragment, write_knowledge_fragment
 from knowledge_builder.tools.merge_tools import (
+    assign_ai_rule_ids,
     collect_fragments,
     read_curator_order,
     sort_fragments,
     write_merged_outputs,
 )
+from knowledge_builder.tools.review_outputs import write_coverage_report, write_sme_review_evidence
 from knowledge_builder.tools.validation_tools import needs_critic, validate_fragment
 from knowledge_builder.tools.fragment_tools import read_knowledge_fragment
 
@@ -62,8 +65,13 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
     critique_dir = work_dir / "critiques"
     curator_plan_path = work_dir / "curator_plan.json"
     progress_path = work_dir / "progress.jsonl"
+    output_dir = out_path.parent
 
     rules = load_rules_csv(args.master)
+    master_rules_with_ids_path = write_master_rules_with_ids(
+        rules,
+        output_dir / "master_rules_with_ids.csv",
+    )
     batch_config = resolve_batch_config(args)
     batches = build_suffix_batches(
         rules,
@@ -86,6 +94,7 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
             "batch_config": batch_config,
             "work_dir": str(work_dir),
             "evidence_dir": str(evidence_dir),
+            "master_rules_with_ids": str(master_rules_with_ids_path),
         }
 
     distill_agent = None
@@ -181,8 +190,19 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
     else:
         curator_order = []
 
-    fragments = sort_fragments(collect_fragments(fragment_dir), curator_order)
+    fragments = assign_ai_rule_ids(sort_fragments(collect_fragments(fragment_dir), curator_order))
     merged = write_merged_outputs(fragments, out_path, args.index_out)
+    sme_review_path = write_sme_review_evidence(
+        fragments,
+        evidence_dir,
+        output_dir / "sme_review_evidence.csv",
+    )
+    coverage_report_path = write_coverage_report(
+        fragments,
+        evidence_dir,
+        rules,
+        output_dir / "coverage_report.md",
+    )
 
     return {
         "rules_loaded": len(rules),
@@ -194,6 +214,9 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         "progress": str(progress_path),
         "knowledge_base": merged["markdown"],
         "index": merged["index"],
+        "sme_review_evidence": str(sme_review_path),
+        "master_rules_with_ids": str(master_rules_with_ids_path),
+        "coverage_report": str(coverage_report_path),
         "fragment_results": fragment_results,
     }
 
