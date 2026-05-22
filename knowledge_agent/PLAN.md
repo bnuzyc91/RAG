@@ -43,6 +43,7 @@ Merge mode:
    |
    v
 alarm_rule_knowledge.md
+alarm_rule_knowledge.json
 alarm_rule_knowledge_index.json
 sme_review_evidence.csv
 master_rules_with_ids.csv
@@ -488,6 +489,7 @@ The final user-facing output set is:
 ```text
 knowledge_base/
   alarm_rule_knowledge.md
+  alarm_rule_knowledge.json
   alarm_rule_knowledge_index.json
   sme_review_evidence.csv
   master_rules_with_ids.csv
@@ -508,6 +510,17 @@ knowledge_base/
 
 `alarm_rule_knowledge_index.json` lets a future prediction service retrieve
 relevant sections by suffix or pattern without parsing the full Markdown file.
+
+`alarm_rule_knowledge.json` is the structured agent-facing version. Each AI rule
+contains:
+
+- `classification_mode`
+- `do_not_use_suffix_alone`
+- `batch_summary`
+- `core_finding`
+- `severity_split_logic`
+- `fallback_logic`
+- examples, exceptions, and SME review questions
 
 `sme_review_evidence.csv` is the human review dashboard. It is long format:
 

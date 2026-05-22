@@ -25,6 +25,7 @@ Required columns:
 Outputs:
 
 - `alarm_rule_knowledge.md`
+- `alarm_rule_knowledge.json`
 - `alarm_rule_knowledge_index.json`
 - `sme_review_evidence.csv`
 - `master_rules_with_ids.csv`
@@ -61,6 +62,11 @@ Deterministic Markdown + JSON Index Merger
 The final knowledge base is always written by deterministic code. Agents may
 distill, critique, or curate, but they do not silently change evidence numbers
 or write the final canonical file.
+
+`alarm_rule_knowledge.md` and `alarm_rule_knowledge.json` are rendered as
+decision knowledge. Mixed batches use `classification_mode:
+conditional_split`, with count-backed `severity_split_logic`, instead of one
+large default rule with a long exception list.
 
 ## Install
 

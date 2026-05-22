@@ -42,6 +42,16 @@ confidence: <High|Medium|Low|Very Low>
 
 ## Pattern: <pattern>
 
+### Classification Mode
+
+Choose one:
+
+- `simple_default`: high-purity pattern where default severity is useful
+- `conditional_split`: mixed pattern where severity depends on internal signals
+- `taxonomy_container`: broad generic pattern such as ALARM where suffix alone
+  should not be used
+- `weak_default`: low-support/weak pattern without stable split signals
+
 ### Observed Evidence
 
 Type: <pattern_type>
@@ -62,6 +72,8 @@ Entropy: <entropy>
 Write concise, evidence-backed domain logic. Explain whether the useful signal
 comes from the suffix itself, from shared structure in the full rule, or from a
 combination of both. Use "usually" or "often" unless purity is exactly 1.0.
+For `conditional_split` and `taxonomy_container`, explicitly say not to use the
+suffix alone.
 
 ### Structural Context
 
@@ -83,6 +95,19 @@ the batch. Prefer count-backed claims like:
 Do not claim a token or phrase is a reliable signal unless the evidence provides
 support and purity for it. If the contrastive signals are weak, say that no
 stable severity split was found.
+
+Prefer a compact table:
+
+| Signal | Predicts | Support | Purity | Meaning |
+|---|---:|---:|---:|---|
+
+### Decision Logic
+
+Write ordered prediction rules. For mixed batches, prefer:
+
+1. If a count-backed high-purity split signal matches, use that severity.
+2. If no split signal matches, use fallback severity with low confidence.
+3. Request SME/manual review when impact is unclear.
 
 ### Escalation Conditions
 

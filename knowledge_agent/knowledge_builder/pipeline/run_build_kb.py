@@ -193,7 +193,7 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         curator_order = []
 
     fragments = assign_ai_rule_ids(sort_fragments(collect_fragments(fragment_dir), curator_order))
-    merged = write_merged_outputs(fragments, out_path, args.index_out)
+    merged = write_merged_outputs(fragments, out_path, evidence_dir, args.index_out)
     sme_review_path = write_sme_review_evidence(
         fragments,
         evidence_dir,
@@ -216,6 +216,7 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         "progress": str(progress_path),
         "knowledge_base": merged["markdown"],
         "index": merged["index"],
+        "knowledge_json": merged["knowledge_json"],
         "sme_review_evidence": str(sme_review_path),
         "master_rules_with_ids": str(master_rules_with_ids_path),
         "coverage_report": str(coverage_report_path),
