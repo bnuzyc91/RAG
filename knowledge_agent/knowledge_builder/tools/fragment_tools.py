@@ -41,6 +41,7 @@ def render_template_fragment(evidence: dict) -> str:
         if not evidence.get("counterexamples")
         else "Counterexamples indicate this pattern should be applied with care."
     )
+    structural_context = render_structural_context(evidence.get("structural_context", {}))
 
     return f"""---
 batch_id: {evidence["batch_id"]}
@@ -72,9 +73,14 @@ Entropy: {evidence["entropy"]}
 
 ### Core Logic
 
-Rules matching this {evidence["pattern_type"]} pattern usually map to
-{evidence.get("dominant_severity") or "Unknown"} severity based on the observed
-distribution. Treat this as evidence-backed guidance, not an absolute rule.
+Rules matching this {evidence["pattern_type"]} pattern lean toward
+{evidence.get("dominant_severity") or "Unknown"} severity in this batch, but the
+full rule structure should be checked before using the suffix as prediction
+logic.
+
+### Structural Context
+
+{structural_context}
 
 ### Escalation Conditions
 
@@ -92,6 +98,57 @@ distribution. Treat this as evidence-backed guidance, not an absolute rule.
 
 {examples}
 """
+
+
+def render_structural_context(context: dict) -> str:
+    if not context:
+        return "No structural context was generated for this batch."
+
+    lines: list[str] = []
+    for title, key in (
+        ("Common prefixes", "common_prefixes"),
+        ("Common suffixes", "common_suffixes"),
+        ("Common contiguous phrases", "common_contiguous_phrases"),
+        ("Common tokens", "common_tokens"),
+    ):
+        items = context.get(key) or []
+        if not items:
+            continue
+        lines.append(f"{title}:")
+        for item in items:
+            label = item.get("phrase") or item.get("token")
+            lines.append(f"- `{label}`: {item.get('count')}")
+        lines.append("")
+
+    contrast = context.get("severity_contrast") or []
+    if contrast:
+        lines.append("Severity-specific contrast:")
+        for item in contrast:
+            tokens = ", ".join(
+                f"{token['token']} ({token['count']})"
+                for token in item.get("distinctive_tokens", [])[:5]
+            ) or "none"
+            phrases = ", ".join(
+                f"{phrase['phrase']} ({phrase['count']})"
+                for phrase in item.get("distinctive_phrases", [])[:5]
+            ) or "none"
+            lines.append(
+                f"- {item.get('severity')} support={item.get('support')}; "
+                f"tokens: {tokens}; phrases: {phrases}"
+            )
+
+    neighbors = context.get("structural_neighbors") or []
+    if neighbors:
+        lines.append("")
+        lines.append("Cross-batch structural neighbors:")
+        for item in neighbors:
+            lines.append(
+                f"- `{item.get('rule')}` -> {item.get('severity')}; "
+                f"score={item.get('score')}; shared=`{item.get('shared_phrase')}`; "
+                f"prefix={item.get('prefix_match')}; suffix={item.get('suffix_match')}"
+            )
+
+    return "\n".join(lines).strip() or "No repeated structural signals were found."
 
 
 def write_knowledge_fragment(fragment_path: str | Path, markdown: str) -> dict:

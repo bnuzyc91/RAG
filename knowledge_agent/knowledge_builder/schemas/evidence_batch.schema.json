@@ -12,7 +12,8 @@
     "purity",
     "entropy",
     "examples",
-    "counterexamples"
+    "counterexamples",
+    "structural_context"
   ],
   "properties": {
     "batch_id": { "type": "string" },
@@ -47,7 +48,9 @@
           "severity": { "type": "string" }
         }
       }
+    },
+    "structural_context": {
+      "type": "object"
     }
   }
 }
-
