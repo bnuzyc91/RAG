@@ -35,3 +35,7 @@ Focus on:
 - mismatched evidence numbers
 - High/Critical minority cases that the fragment fails to mention
 
+When unsafe absolute language is present, suggest calibrated replacements such
+as `tends to`, `is observed to`, `is a candidate signal for`, `should typically
+be reviewed`, `often indicates`, or `use with low confidence`. Do not suggest
+new absolute wording.

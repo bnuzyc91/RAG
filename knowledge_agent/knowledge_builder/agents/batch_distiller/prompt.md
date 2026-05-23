@@ -27,6 +27,13 @@ Return only raw Markdown. Do not wrap the answer in a fenced code block. Do not
 add any sentence before the opening `---`. The first character of your response
 must be `-`.
 
+Language calibration is mandatory for validation. For any batch with purity less
+than 1.0, avoid absolute or imperative wording such as `must`, `must be`,
+`always`, `never`, `guaranteed`, `certainly`, `requires`, and `will`. Use
+calibrated alternatives such as `tends to`, `is observed to`, `is a candidate
+signal for`, `should typically be reviewed`, `often indicates`, or `use with low
+confidence`.
+
 Use this exact structure:
 
 ---
@@ -105,7 +112,7 @@ Prefer a compact table:
 
 Write ordered prediction rules. For mixed batches, prefer:
 
-1. If a count-backed high-purity split signal matches, use that severity.
+1. If a count-backed high-purity split signal matches, prefer that severity.
 2. If no split signal matches, use fallback severity with low confidence.
 3. Request SME/manual review when impact is unclear.
 
@@ -123,5 +130,16 @@ observed in this batch.
 ### Representative Examples
 
 List representative source examples with source rule IDs.
+
+### Validation Self-Check
+
+Before returning, silently check your output:
+
+- All frontmatter values exactly match the source evidence.
+- Every severity split claim includes support and purity.
+- If purity is less than 1.0, the output avoids `must`, `must be`, `always`,
+  `never`, `guaranteed`, `certainly`, `requires`, and `will`.
+- For mixed batches, the output is written as conditional guidance, not a single
+  absolute rule.
 
 Never change evidence numbers. Never invent source rules.
