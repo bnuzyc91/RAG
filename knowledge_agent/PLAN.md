@@ -48,7 +48,15 @@ alarm_rule_knowledge_index.json
 sme_review_evidence.csv
 master_rules_with_ids.csv
 coverage_report.md
+sibling_conflict_report.md
 ```
+
+The build also carries lightweight suffix graph context. Batches are processed
+from broad to specific, accepted ancestor summaries are injected into child
+distillation, deterministic virtual ancestor summaries are included when parent
+suffixes were not emitted as their own batches, validation failures can retry
+with prior critique, and sibling conflicts are reported deterministically after
+merge.
 
 ## Batch Strategy
 
@@ -494,6 +502,7 @@ knowledge_base/
   sme_review_evidence.csv
   master_rules_with_ids.csv
   coverage_report.md
+  sibling_conflict_report.md
 ```
 
 `alarm_rule_knowledge.md` is the agent-facing reasoning file. It contains:
@@ -540,6 +549,8 @@ Evidence roles:
 `master_rules_with_ids.csv` assigns stable source IDs to the original
 `Rule, Severity` rows. `coverage_report.md` summarizes total rules, AI rules,
 coverage, low-confidence rules, and High/Critical exceptions.
+`sibling_conflict_report.md` flags default-severity conflicts between sibling
+or parent/child batches for SME or engineering review.
 
 ## Known Limitation And Next Improvement
 

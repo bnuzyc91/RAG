@@ -23,6 +23,29 @@ Source examples include stable `source_rule_id` values from
 examples or exceptions so human SMEs can trace the knowledge back to the
 original master rule file.
 
+The user message may include parent knowledge context from accepted ancestor
+batches. Treat parent knowledge as inherited background, not absolute truth:
+
+- If parent classification mode is `taxonomy_container`, refine it with this
+  batch's more specific evidence.
+- If parent has count-backed severity split logic, reuse it only when this
+  batch's evidence supports it.
+- If this batch contradicts the parent, explain the stronger child evidence in
+  calibrated language.
+- Do not repeat the parent summary unless it directly changes this batch's
+  decision logic.
+
+The evidence JSON may also include deterministic `hierarchical_context` with
+virtual ancestor suffix summaries. Use these summaries to understand where the
+current batch sits in the suffix taxonomy. If an ancestor is mixed, explicitly
+treat it as taxonomy context; if the child is more specific and purer, describe
+the child as a refinement of the ancestor.
+
+The user message may also include prior critique or validation feedback from a
+failed attempt. Address every blocking issue directly in the regenerated
+fragment. Most validation failures are caused by mismatched frontmatter,
+unsupported claims, missing exceptions, or unsafe absolute language.
+
 Return only raw Markdown. Do not wrap the answer in a fenced code block. Do not
 add any sentence before the opening `---`. The first character of your response
 must be `-`.
@@ -141,5 +164,6 @@ Before returning, silently check your output:
   `never`, `guaranteed`, `certainly`, `requires`, and `will`.
 - For mixed batches, the output is written as conditional guidance, not a single
   absolute rule.
+- If prior critique was provided, every blocking issue has been addressed.
 
 Never change evidence numbers. Never invent source rules.

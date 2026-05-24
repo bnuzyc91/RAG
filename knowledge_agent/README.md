@@ -30,6 +30,7 @@ Outputs:
 - `sme_review_evidence.csv`
 - `master_rules_with_ids.csv`
 - `coverage_report.md`
+- `sibling_conflict_report.md`
 
 ## Architecture
 
@@ -67,6 +68,15 @@ or write the final canonical file.
 decision knowledge. Mixed batches use `classification_mode:
 conditional_split`, with count-backed `severity_split_logic`, instead of one
 large default rule with a long exception list.
+
+The build uses lightweight graph context:
+
+- suffix batches are processed from broad to specific
+- accepted ancestor summaries are injected into child distillation
+- deterministic virtual ancestor summaries are included even when a parent
+  suffix was not emitted as its own batch
+- failed validation can retry with critic/validator feedback
+- sibling and parent/child default conflicts are reported deterministically
 
 ## Install
 
@@ -272,6 +282,10 @@ curator_plan.json
 progress.jsonl
   append-only status log for resumable runs
 ```
+
+The final output folder also includes `sibling_conflict_report.md`, which flags
+deterministic default-severity conflicts between sibling batches or parent/child
+batches. It is a review report, not an automatic resolver.
 
 Do not rebuild from the final `alarm_rule_knowledge.md`. It is already
 distilled and lossy. Rebuild from the original CSV plus the work directory.

@@ -26,6 +26,8 @@ Batch: <batch_id>
 ## Required Fix Direction
 
 Briefly explain what the distillation should change if blocking issues exist.
+Make the fix direction specific enough that the distiller can retry using this
+report as prior critique.
 
 Focus on:
 

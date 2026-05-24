@@ -14,6 +14,13 @@ from knowledge_builder.tools.evidence_tools import (
     write_evidence_batches,
 )
 from knowledge_builder.tools.fragment_tools import render_template_fragment, write_knowledge_fragment
+from knowledge_builder.tools.graph_context_tools import (
+    accepted_context_from_fragment,
+    attach_graph_context,
+    order_batch_paths_by_graph,
+    parent_context_for_evidence,
+    write_sibling_conflict_report,
+)
 from knowledge_builder.tools.merge_tools import (
     assign_ai_rule_ids,
     collect_fragments,
@@ -51,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-information-gain", type=float, default=None)
     parser.add_argument("--min-child-coverage", type=float, default=None)
     parser.add_argument("--limit-batches", type=int, default=0)
+    parser.add_argument("--max-retries", type=int, default=2)
     parser.add_argument("--resume", action="store_true", help="Skip already-valid fragments in work dir.")
     parser.add_argument("--force", action="store_true", help="Regenerate fragments even when --resume is set.")
     parser.add_argument("--plan-only", action="store_true", help="Only create evidence batches and print count.")
@@ -87,6 +95,8 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
     if args.limit_batches:
         batches = batches[: args.limit_batches]
     batch_paths = write_evidence_batches(batches, evidence_dir)
+    graph_by_id = attach_graph_context(batch_paths)
+    batch_paths = order_batch_paths_by_graph(batch_paths, graph_by_id)
 
     if args.plan_only:
         return {
@@ -112,14 +122,17 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         critic_agent = create_agent(args.model)
 
     fragment_results = []
+    accepted_contexts: dict[str, dict] = {}
     for batch_path in batch_paths:
         evidence = read_evidence_batch(batch_path)
         fragment_path = fragment_dir / f"{evidence['batch_id']}.md"
+        parent_context = parent_context_for_evidence(evidence, accepted_contexts)
 
         if args.resume and not args.force and fragment_path.exists():
             existing = read_knowledge_fragment(fragment_path)
             existing_validation = validate_fragment(existing, evidence)
             if existing_validation.ok:
+                accepted_contexts[evidence["batch_id"]] = accepted_context_from_fragment(existing, evidence)
                 result = {
                     "batch_id": evidence["batch_id"],
                     "fragment_path": str(fragment_path),
@@ -133,40 +146,82 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
                 append_progress(progress_path, {"status": "skipped", **result})
                 continue
 
-        try:
-            markdown = await distill_fragment(
-                evidence=evidence,
-                batch_path=batch_path,
-                mode=args.distill_mode,
-                agent=distill_agent,
-            )
-        except Exception as exc:
+        markdown = ""
+        validation = None
+        critique_path = None
+        prior_critique = ""
+        for attempt in range(args.max_retries + 1):
+            try:
+                markdown = await distill_fragment(
+                    evidence=evidence,
+                    batch_path=batch_path,
+                    mode=args.distill_mode,
+                    agent=distill_agent,
+                    parent_context=parent_context,
+                    prior_critique=prior_critique,
+                    attempt=attempt + 1,
+                )
+            except Exception as exc:
+                append_progress(
+                    progress_path,
+                    {
+                        "status": "failed",
+                        "batch_id": evidence["batch_id"],
+                        "batch_path": str(batch_path),
+                        "attempt": attempt + 1,
+                        "error": repr(exc),
+                    },
+                )
+                raise
+
+            write_knowledge_fragment(fragment_path, markdown)
+            validation = validate_fragment(markdown, evidence)
+            if validation.ok:
+                break
+
+            critique_path = critique_dir / f"{evidence['batch_id']}.md"
+            if args.critic_mode != "off":
+                prior_critique = await critique_fragment(
+                    evidence=evidence,
+                    batch_path=batch_path,
+                    fragment_path=fragment_path,
+                    validation=validation,
+                    mode=args.critic_mode,
+                    agent=critic_agent,
+                )
+                write_knowledge_fragment(critique_path, prior_critique)
+            else:
+                prior_critique = json.dumps(
+                    {"blocking": validation.blocking, "warnings": validation.warnings},
+                    indent=2,
+                )
+
             append_progress(
                 progress_path,
                 {
-                    "status": "failed",
+                    "status": "retrying",
                     "batch_id": evidence["batch_id"],
-                    "batch_path": str(batch_path),
-                    "error": repr(exc),
+                    "attempt": attempt + 1,
+                    "blocking": validation.blocking,
                 },
             )
-            raise
+            if attempt >= args.max_retries:
+                break
 
-        write_knowledge_fragment(fragment_path, markdown)
-
-        validation = validate_fragment(markdown, evidence)
-        critique_path = None
-        if args.critic_mode != "off" and needs_critic(validation, evidence):
-            critique_path = critique_dir / f"{evidence['batch_id']}.md"
-            report = await critique_fragment(
-                evidence=evidence,
-                batch_path=batch_path,
-                fragment_path=fragment_path,
-                validation=validation,
-                mode=args.critic_mode,
-                agent=critic_agent,
-            )
-            write_knowledge_fragment(critique_path, report)
+        assert validation is not None
+        if validation.ok:
+            accepted_contexts[evidence["batch_id"]] = accepted_context_from_fragment(markdown, evidence)
+            if args.critic_mode != "off" and needs_critic(validation, evidence):
+                critique_path = critique_dir / f"{evidence['batch_id']}.md"
+                report = await critique_fragment(
+                    evidence=evidence,
+                    batch_path=batch_path,
+                    fragment_path=fragment_path,
+                    validation=validation,
+                    mode=args.critic_mode,
+                    agent=critic_agent,
+                )
+                write_knowledge_fragment(critique_path, report)
 
         if not validation.ok:
             rejected_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +260,11 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         rules,
         output_dir / "coverage_report.md",
     )
+    sibling_conflict_report_path = write_sibling_conflict_report(
+        fragments,
+        evidence_dir,
+        output_dir / "sibling_conflict_report.md",
+    )
 
     return {
         "rules_loaded": len(rules),
@@ -220,6 +280,7 @@ async def run_pipeline(args: argparse.Namespace) -> dict:
         "sme_review_evidence": str(sme_review_path),
         "master_rules_with_ids": str(master_rules_with_ids_path),
         "coverage_report": str(coverage_report_path),
+        "sibling_conflict_report": str(sibling_conflict_report_path),
         "fragment_results": fragment_results,
     }
 
@@ -273,6 +334,9 @@ async def distill_fragment(
     batch_path: Path,
     mode: str,
     agent,
+    parent_context: list[dict] | None = None,
+    prior_critique: str = "",
+    attempt: int = 1,
 ) -> str:
     if mode == "template":
         return render_template_fragment(evidence)
@@ -282,6 +346,11 @@ async def distill_fragment(
     prompt = (
         "Distill this evidence batch into the required Markdown fragment.\n\n"
         f"Evidence batch path: {batch_path}\n\n"
+        f"Attempt: {attempt}\n\n"
+        "Parent knowledge context from accepted ancestor batches:\n"
+        f"{json.dumps(parent_context or [], indent=2)}\n\n"
+        "Prior critique / validation feedback to address:\n"
+        f"{prior_critique or 'None'}\n\n"
         "Evidence JSON:\n"
         f"{json.dumps(evidence, indent=2)}"
     )

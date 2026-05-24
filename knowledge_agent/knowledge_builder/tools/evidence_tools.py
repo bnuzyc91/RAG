@@ -34,6 +34,7 @@ class EvidenceBatch:
     source_records: list[dict[str, str]]
     structural_context: dict
     contrastive_context: dict
+    hierarchical_context: dict
 
 
 def tokenize_rule(rule: str) -> list[str]:
@@ -367,7 +368,49 @@ def _make_batch(
             current_suffix_depth=current_depth,
         ),
         contrastive_context=build_contrastive_context(rules),
+        hierarchical_context=build_hierarchical_context(
+            pattern,
+            all_rules=all_rules,
+            current_suffix_depth=current_depth,
+        ),
     )
+
+
+def build_hierarchical_context(
+    pattern: str,
+    *,
+    all_rules: list[AlarmRule],
+    current_suffix_depth: int,
+) -> dict:
+    ancestor_summaries = []
+    tokens = tokenize_rule(pattern)
+    for depth in range(1, min(current_suffix_depth, len(tokens))):
+        ancestor_pattern = "-".join(tokens[-depth:])
+        grouped = [rule for rule in all_rules if rule.tokens[-depth:] == tokens[-depth:]]
+        if not grouped:
+            continue
+        counts = Counter(rule.severity for rule in grouped)
+        ancestor_summaries.append(
+            {
+                "pattern_type": "virtual_suffix_ancestor",
+                "pattern": ancestor_pattern,
+                "depth": depth,
+                "support": len(grouped),
+                "severity_distribution": dict(sorted(counts.items())),
+                "dominant_severity": dominant_severity(counts),
+                "purity": round(purity(counts), 4),
+                "entropy": round(entropy(counts), 4),
+                "interpretation": ancestor_interpretation(ancestor_pattern, counts),
+            }
+        )
+    return {"ancestor_summaries": ancestor_summaries}
+
+
+def ancestor_interpretation(pattern: str, counts: Counter[str]) -> str:
+    p = purity(counts)
+    if p >= 0.85:
+        return "Broad ancestor has relatively stable severity evidence."
+    return "Broad ancestor is mixed; treat it as taxonomy context rather than a default severity rule."
 
 
 def _make_capped_batches(

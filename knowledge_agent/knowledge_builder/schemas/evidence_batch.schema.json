@@ -15,7 +15,8 @@
     "counterexamples",
     "source_records",
     "structural_context",
-    "contrastive_context"
+    "contrastive_context",
+    "hierarchical_context"
   ],
   "properties": {
     "batch_id": { "type": "string" },
@@ -73,6 +74,9 @@
       "type": "object"
     },
     "contrastive_context": {
+      "type": "object"
+    },
+    "hierarchical_context": {
       "type": "object"
     }
   }
