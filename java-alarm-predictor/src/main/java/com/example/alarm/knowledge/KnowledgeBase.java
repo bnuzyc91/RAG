@@ -11,46 +11,32 @@ import java.util.Map;
 /**
  * Immutable runtime knowledge base built once at startup from alarm_rule_knowledge.json.
  *
- * Three indexes allow O(depth) lookups instead of scanning all AI rules per prediction:
- *   byPattern       — exact normalized pattern string → AiRule
- *   bySuffix        — any suffix of any pattern → candidate AiRules
+ * Indexes allow O(depth) pattern lookup instead of scanning all AI rules per prediction:
+ *   byPattern       — exact normalized pattern string → candidate AiRules
  *   bySignalFeature — split-signal feature string → AiRules that declare it
  */
 public final class KnowledgeBase {
     private final List<AiRule> rules;
     private final Map<String, AiRule> byAiRuleId;
-    private final Map<String, AiRule> byPattern;
-    private final Map<String, List<AiRule>> bySuffix;
+    private final Map<String, List<AiRule>> byPattern;
     private final Map<String, List<AiRule>> bySignalFeature;
 
     public KnowledgeBase(List<AiRule> rules) {
         this.rules = Collections.unmodifiableList(new ArrayList<>(rules));
 
         Map<String, AiRule> idIndex = new HashMap<>();
-        Map<String, AiRule> patternIndex = new HashMap<>();
-        Map<String, List<AiRule>> suffixIndex = new HashMap<>();
+        Map<String, List<AiRule>> patternIndex = new HashMap<>();
         Map<String, List<AiRule>> signalIndex = new HashMap<>();
 
         for (AiRule rule : rules) {
             idIndex.put(rule.getAiRuleId(), rule);
-            patternIndex.put(normalizedPattern(rule.getPatternTokens()), rule);
-            buildSuffixEntries(rule, suffixIndex);
+            patternIndex.computeIfAbsent(normalizedPattern(rule.getPatternTokens()), ignored -> new ArrayList<>()).add(rule);
             buildSignalEntries(rule, signalIndex);
         }
 
         this.byAiRuleId = Collections.unmodifiableMap(idIndex);
-        this.byPattern = Collections.unmodifiableMap(patternIndex);
-        this.bySuffix = Collections.unmodifiableMap(suffixIndex);
-        this.bySignalFeature = Collections.unmodifiableMap(signalIndex);
-    }
-
-    /** Every suffix of the pattern (including the full pattern) maps to this AI rule. */
-    private static void buildSuffixEntries(AiRule rule, Map<String, List<AiRule>> index) {
-        List<String> tokens = rule.getPatternTokens();
-        for (int start = 0; start < tokens.size(); start++) {
-            String key = RuleTokenizer.joinTokens(tokens.subList(start, tokens.size()));
-            index.computeIfAbsent(key, ignored -> new ArrayList<>()).add(rule);
-        }
+        this.byPattern = freezeListMap(patternIndex);
+        this.bySignalFeature = freezeListMap(signalIndex);
     }
 
     /** Each split-signal feature maps to the AI rule that declares it. */
@@ -70,19 +56,14 @@ public final class KnowledgeBase {
     public AiRule getByAiRuleId(String id) { return byAiRuleId.get(id); }
 
     /**
-     * Returns the AI rule whose pattern exactly matches the joined token list,
-     * or null if none.
+     * Returns AI rules whose pattern exactly matches the joined token list.
+     *
+     * Multiple rules may share a pattern when a large evidence batch was split
+     * into deterministic suffix_part shards. Prediction must preserve those
+     * shards instead of silently overwriting them.
      */
-    public AiRule getByExactPattern(List<String> tokens) {
-        return byPattern.get(normalizedPattern(tokens));
-    }
-
-    /**
-     * Returns AI rules that include this suffix in their pattern, or empty list.
-     * Callers should try from longest suffix to shortest and stop at first hit.
-     */
-    public List<AiRule> getBySuffix(List<String> suffixTokens) {
-        List<AiRule> found = bySuffix.get(normalizedPattern(suffixTokens));
+    public List<AiRule> getByExactPattern(List<String> tokens) {
+        List<AiRule> found = byPattern.get(normalizedPattern(tokens));
         return found != null ? Collections.unmodifiableList(found) : Collections.emptyList();
     }
 
@@ -96,4 +77,12 @@ public final class KnowledgeBase {
     }
 
     public int size() { return rules.size(); }
+
+    private static Map<String, List<AiRule>> freezeListMap(Map<String, List<AiRule>> source) {
+        Map<String, List<AiRule>> frozen = new HashMap<>();
+        for (Map.Entry<String, List<AiRule>> entry : source.entrySet()) {
+            frozen.put(entry.getKey(), Collections.unmodifiableList(new ArrayList<>(entry.getValue())));
+        }
+        return Collections.unmodifiableMap(frozen);
+    }
 }

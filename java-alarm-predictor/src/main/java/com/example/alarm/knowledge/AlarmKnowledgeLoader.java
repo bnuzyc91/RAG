@@ -24,24 +24,30 @@ public final class AlarmKnowledgeLoader {
     public static KnowledgeBase load(Path jsonPath) throws IOException {
         String text = Files.readString(jsonPath, StandardCharsets.UTF_8);
         Object root = new JsonParser(text).parse();
-        Map<String, Object> rootMap = castMap(root);
-        List<Object> aiRulesRaw = castList(rootMap.get("ai_rules"));
+        Map<String, Object> rootMap = requireMap(root, "root");
+        List<Object> aiRulesRaw = requireList(rootMap.get("ai_rules"), "ai_rules");
+        if (aiRulesRaw.isEmpty()) {
+            throw new IllegalArgumentException("alarm knowledge JSON contains no ai_rules");
+        }
 
         List<AiRule> rules = new ArrayList<>(aiRulesRaw.size());
-        for (Object item : aiRulesRaw) {
-            AiRule rule = parseAiRule(castMap(item));
+        for (int i = 0; i < aiRulesRaw.size(); i++) {
+            AiRule rule = parseAiRule(requireMap(aiRulesRaw.get(i), "ai_rules[" + i + "]"));
             if (rule != null) {
                 rules.add(rule);
             }
+        }
+        if (rules.isEmpty()) {
+            throw new IllegalArgumentException("alarm knowledge JSON produced no loadable AI rules");
         }
         return new KnowledgeBase(rules);
     }
 
     private static AiRule parseAiRule(Map<String, Object> m) {
-        String pattern = str(m, "pattern");
-        if (pattern == null || pattern.isBlank()) {
-            return null;
-        }
+        requireNonBlank(m, "ai_rule_id");
+        requireNonBlank(m, "batch_id");
+        requireNonBlank(m, "classification_mode");
+        String pattern = requireNonBlank(m, "pattern");
         List<String> patternTokens = RuleTokenizer.tokenize(pattern);
 
         BatchSummary summary = parseBatchSummary(castMapOrEmpty(m.get("batch_summary")));
@@ -151,9 +157,29 @@ public final class AlarmKnowledgeLoader {
     private static Map<String, Object> castMapOrEmpty(Object o) { return castMap(o); }
     private static List<Object> castListOrEmpty(Object o) { return castList(o); }
 
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> requireMap(Object o, String fieldName) {
+        if (o instanceof Map) return (Map<String, Object>) o;
+        throw new IllegalArgumentException("Expected object for " + fieldName);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> requireList(Object o, String fieldName) {
+        if (o instanceof List) return (List<Object>) o;
+        throw new IllegalArgumentException("Expected array for " + fieldName);
+    }
+
     private static String str(Map<String, Object> m, String key) {
         Object v = m.get(key);
         return v instanceof String ? (String) v : null;
+    }
+
+    private static String requireNonBlank(Map<String, Object> m, String key) {
+        String value = str(m, key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Missing required string field: " + key);
+        }
+        return value;
     }
 
     private static boolean bool(Map<String, Object> m, String key) {
@@ -195,7 +221,12 @@ public final class AlarmKnowledgeLoader {
 
         Object parse() {
             skipWhitespace();
-            return parseValue();
+            Object value = parseValue();
+            skipWhitespace();
+            if (pos != src.length) {
+                throw new IllegalStateException("Unexpected trailing content at position " + pos);
+            }
+            return value;
         }
 
         private Object parseValue() {

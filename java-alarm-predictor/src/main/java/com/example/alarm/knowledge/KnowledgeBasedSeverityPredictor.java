@@ -17,8 +17,8 @@ import java.util.Set;
  *
  * Prediction flow:
  *   1. Tokenize input rule.
- *   2. Walk suffixes longest-first; look up candidate AI rules.
- *   3. Scan all input n-grams for split-signal feature matches.
+ *   2. Walk suffixes longest-first; look up exact AI-rule pattern matches.
+ *   3. Evaluate split-signal features only inside the matched AI-rule context.
  *   4. Dispatch on classificationMode to emit votes.
  */
 public final class KnowledgeBasedSeverityPredictor {
@@ -44,79 +44,56 @@ public final class KnowledgeBasedSeverityPredictor {
         List<SeverityVote> votes = new ArrayList<>();
         Set<String> seenRuleIds = new HashSet<>();
 
-        AiRule suffixMatch = longestSuffixMatch(tokens);
-        List<SignalHit> signalHits = findSignalHits(tokens);
-
-        // Collect candidate AI rules: suffix match first, then signal-hit rules
-        List<AiRule> candidates = new ArrayList<>();
-        if (suffixMatch != null) {
-            candidates.add(suffixMatch);
-        }
-        for (SignalHit hit : signalHits) {
-            if (!seenRuleIds.contains(hit.getRule().getAiRuleId())) {
-                candidates.add(hit.getRule());
-            }
-        }
+        List<AiRule> candidates = longestPatternMatches(tokens);
 
         for (AiRule candidate : candidates) {
             if (!seenRuleIds.add(candidate.getAiRuleId())) continue;
 
-            List<SignalHit> matchingSignals = new ArrayList<>();
-            for (SignalHit hit : signalHits) {
-                if (hit.getRule().getAiRuleId().equals(candidate.getAiRuleId())) {
-                    matchingSignals.add(hit);
-                }
-            }
-
-            boolean isSuffixCandidate = suffixMatch != null
-                    && suffixMatch.getAiRuleId().equals(candidate.getAiRuleId());
-            emitVotes(candidate, matchingSignals, isSuffixCandidate, votes);
+            List<SignalHit> matchingSignals = findSignalHits(tokens, candidate);
+            emitVotes(candidate, matchingSignals, true, votes);
         }
 
         return Collections.unmodifiableList(votes);
     }
 
-    // ---- Step 2: suffix lookup ----
+    // ---- Step 2: longest exact suffix-pattern lookup ----
 
-    private AiRule longestSuffixMatch(List<String> tokens) {
+    private List<AiRule> longestPatternMatches(List<String> tokens) {
         for (int start = 0; start < tokens.size(); start++) {
             List<String> suffix = tokens.subList(start, tokens.size());
-            AiRule exact = kb.getByExactPattern(suffix);
-            if (exact != null) return exact;
-            List<AiRule> candidates = kb.getBySuffix(suffix);
-            if (!candidates.isEmpty()) return longestPatternRule(candidates);
+            List<AiRule> exact = kb.getByExactPattern(suffix);
+            if (!exact.isEmpty()) return exact;
         }
-        return null;
+        return Collections.emptyList();
     }
 
-    private static AiRule longestPatternRule(List<AiRule> rules) {
-        AiRule best = null;
-        for (AiRule r : rules) {
-            if (best == null || r.getPatternTokens().size() > best.getPatternTokens().size()) {
-                best = r;
-            }
-        }
-        return best;
-    }
+    // ---- Step 3: signal feature scan inside a matched AI rule ----
 
-    // ---- Step 3: signal feature scan ----
-
-    private List<SignalHit> findSignalHits(List<String> tokens) {
+    private static List<SignalHit> findSignalHits(List<String> tokens, AiRule candidate) {
         List<SignalHit> hits = new ArrayList<>();
-        for (int len = 1; len <= tokens.size(); len++) {
-            for (int start = 0; start <= tokens.size() - len; start++) {
-                List<String> ngram = tokens.subList(start, start + len);
-                List<AiRule> candidates = kb.getBySignalFeature(ngram);
-                for (AiRule candidate : candidates) {
-                    for (SeveritySplitSignal signal : candidate.getSeveritySplitLogic()) {
-                        if (signal.getFeatureTokens().equals(ngram)) {
-                            hits.add(new SignalHit(candidate, signal));
-                        }
-                    }
-                }
+        for (SeveritySplitSignal signal : candidate.getSeveritySplitLogic()) {
+            if (containsContiguous(tokens, signal.getFeatureTokens())) {
+                hits.add(new SignalHit(candidate, signal));
             }
         }
         return hits;
+    }
+
+    private static boolean containsContiguous(List<String> tokens, List<String> featureTokens) {
+        if (featureTokens.isEmpty() || featureTokens.size() > tokens.size()) {
+            return false;
+        }
+        for (int start = 0; start <= tokens.size() - featureTokens.size(); start++) {
+            boolean match = true;
+            for (int offset = 0; offset < featureTokens.size(); offset++) {
+                if (!tokens.get(start + offset).equals(featureTokens.get(offset))) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
     }
 
     // ---- Step 4–6: emit votes ----
@@ -136,7 +113,7 @@ public final class KnowledgeBasedSeverityPredictor {
                 out.add(new SeverityVote(
                         candidate.getDefaultSeverity(),
                         purity,
-                        WEIGHT_SIMPLE_DEFAULT * purity,
+                        WEIGHT_SIMPLE_DEFAULT,
                         "KB_SIMPLE_DEFAULT",
                         evidence(candidate, null)
                 ));
