@@ -299,6 +299,12 @@ public final class AlarmKnowledgeLoader {
                         case 'b': sb.append('\b'); break;
                         case 'f': sb.append('\f'); break;
                         case 'u':
+                            if (pos + 4 > src.length) {
+                                throw new IllegalStateException(
+                                        "Truncated \\u escape at position " + pos
+                                        + ": need 4 hex digits but only "
+                                        + (src.length - pos) + " char(s) remain");
+                            }
                             int code = Integer.parseInt(new String(src, pos, 4), 16);
                             sb.append((char) code);
                             pos += 4;

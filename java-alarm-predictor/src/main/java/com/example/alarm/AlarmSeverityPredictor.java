@@ -213,13 +213,41 @@ public final class AlarmSeverityPredictor {
                 .collect(Collectors.toList());
     }
 
-    private PredictionDecision decide(List<SeverityVote> votes) {
+    /**
+     * Aggregates severity votes into a single decision.
+     *
+     * <p>Votes are first grouped into <em>family seats</em>. Within each family
+     * only the highest-weighted vote is retained, preventing multiple signals
+     * from the same evidence source from inflating the final score. Critically,
+     * knowledge-base votes ({@code KB_*}) occupy their own family seat so they
+     * contribute <em>alongside</em> structural suffix votes rather than competing
+     * with them for the same seat.
+     *
+     * <p>Package-private so that composite callers in {@code com.example.alarm}
+     * can pass a merged structural + KB vote list directly.
+     */
+    PredictionDecision decide(List<SeverityVote> votes) {
         if (votes.isEmpty()) {
             return new PredictionDecision(null, 0.0);
         }
 
-        Map<String, Double> scores = new LinkedHashMap<>();
+        // ---- Family-seat grouping -------------------------------------------
+        // Within each named family keep only the highest-weighted vote so that
+        // multiple signals from the same evidence source cannot inflate the score.
+        // KB_ prefixed methods form their own family so knowledge-based evidence
+        // supports (rather than displaces) structural suffix evidence.
+        // --------------------------------------------------------------------
+        Map<String, SeverityVote> familyBest = new LinkedHashMap<>();
         for (SeverityVote vote : votes) {
+            String family = familyOf(vote.getMethod());
+            SeverityVote existing = familyBest.get(family);
+            if (existing == null || vote.weightedScore() > existing.weightedScore()) {
+                familyBest.put(family, vote);
+            }
+        }
+
+        Map<String, Double> scores = new LinkedHashMap<>();
+        for (SeverityVote vote : familyBest.values()) {
             if (vote.getSeverity() != null && !vote.getSeverity().isBlank()) {
                 scores.merge(vote.getSeverity(), vote.weightedScore(), Double::sum);
             }
@@ -230,6 +258,30 @@ public final class AlarmSeverityPredictor {
         Map.Entry<String, Double> top = topDouble(scores);
         double total = scores.values().stream().mapToDouble(Double::doubleValue).sum();
         return new PredictionDecision(top.getKey(), total == 0.0 ? 0.0 : top.getValue() / total);
+    }
+
+    /**
+     * Maps a vote method name to a family seat.
+     *
+     * <p>Rules:
+     * <ul>
+     *   <li>{@code KB_*}          → {@code KB_FAMILY} (knowledge-base, separate seat)
+     *   <li>{@code PREFIX_*}      → {@code PREFIX_FAMILY}
+     *   <li>suffix-related names  → {@code SUFFIX_FAMILY}
+     *   <li>{@code STRUCTURAL_*}  → {@code NEIGHBORS_FAMILY}
+     *   <li>anything else         → its own individual seat (method name as key)
+     * </ul>
+     */
+    private static String familyOf(String method) {
+        if (method == null) return "UNKNOWN";
+        if (method.startsWith("KB_"))          return "KB_FAMILY";
+        if (method.startsWith("PREFIX_"))      return "PREFIX_FAMILY";
+        if (method.startsWith("SUFFIX_")
+                || method.equals("EXACT_SUFFIX_CHAIN")
+                || method.equals("EMBEDDED_PHRASE")
+                || method.equals("FUZZY_SUFFIX_PHRASE")) return "SUFFIX_FAMILY";
+        if (method.startsWith("STRUCTURAL_"))  return "NEIGHBORS_FAMILY";
+        return method; // unknown methods each get their own seat
     }
 
     private static Map<String, Integer> severityCounts(List<MasterRule> rules) {
@@ -252,7 +304,7 @@ public final class AlarmSeverityPredictor {
                 .orElseThrow();
     }
 
-    private static final class PredictionDecision {
+    static final class PredictionDecision {
         final String severity;
         final double confidence;
 
