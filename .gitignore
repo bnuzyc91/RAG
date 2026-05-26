@@ -30,4 +30,4 @@ secrets.json
 .vscode/
 .idea/
 *.swp
-java-alarm-predictor/src/main/.DS_Store
+*.DS_Store
